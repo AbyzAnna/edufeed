@@ -1,0 +1,510 @@
+"use client";
+
+import { useState, useRef, useCallback, useEffect } from "react";
+import {
+  Play,
+  Pause,
+  Volume2,
+  VolumeX,
+  Maximize,
+  SkipBack,
+  SkipForward,
+  BookmarkPlus,
+  MessageSquarePlus,
+  List,
+  ChevronDown,
+} from "lucide-react";
+
+interface Chapter {
+  id: string;
+  title: string;
+  startTime: number;
+  endTime?: number | null;
+}
+
+interface Bookmark {
+  id: string;
+  timestamp: number;
+  label?: string | null;
+}
+
+interface Note {
+  id: string;
+  timestamp: number;
+  content: string;
+}
+
+interface UniversalPlayerProps {
+  type: "YOUTUBE" | "AUDIO" | "VIDEO" | "PODCAST";
+  url: string;
+  title: string;
+  chapters?: Chapter[];
+  bookmarks?: Bookmark[];
+  notes?: Note[];
+  duration?: number;
+  onAddBookmark?: (timestamp: number) => void;
+  onAddNote?: (timestamp: number, content: string) => void;
+  onTimeUpdate?: (time: number) => void;
+}
+
+const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+
+export default function UniversalPlayer({
+  type,
+  url,
+  title,
+  chapters = [],
+  bookmarks = [],
+  notes = [],
+  duration: initialDuration,
+  onAddBookmark,
+  onAddNote,
+  onTimeUpdate,
+}: UniversalPlayerProps) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const progressRef = useRef<HTMLDivElement>(null);
+
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(initialDuration || 0);
+  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+  const [showChapters, setShowChapters] = useState(false);
+  const [showNoteInput, setShowNoteInput] = useState(false);
+  const [noteContent, setNoteContent] = useState("");
+  const [noteTimestamp, setNoteTimestamp] = useState(0);
+
+  const mediaElement = type === "VIDEO" ? videoRef.current : audioRef.current;
+
+  // Format time to MM:SS or HH:MM:SS
+  const formatTime = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+
+    if (h > 0) {
+      return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+    }
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
+
+  // Get current chapter
+  const getCurrentChapter = useCallback(() => {
+    for (let i = chapters.length - 1; i >= 0; i--) {
+      if (currentTime >= chapters[i].startTime) {
+        return chapters[i];
+      }
+    }
+    return null;
+  }, [chapters, currentTime]);
+
+  // Media event handlers
+  useEffect(() => {
+    const media = mediaElement;
+    if (!media) return;
+
+    const handleTimeUpdate = () => {
+      setCurrentTime(media.currentTime);
+      onTimeUpdate?.(media.currentTime);
+    };
+
+    const handleLoadedMetadata = () => {
+      setDuration(media.duration);
+    };
+
+    const handlePlay = () => setIsPlaying(true);
+    const handlePause = () => setIsPlaying(false);
+
+    media.addEventListener("timeupdate", handleTimeUpdate);
+    media.addEventListener("loadedmetadata", handleLoadedMetadata);
+    media.addEventListener("play", handlePlay);
+    media.addEventListener("pause", handlePause);
+
+    return () => {
+      media.removeEventListener("timeupdate", handleTimeUpdate);
+      media.removeEventListener("loadedmetadata", handleLoadedMetadata);
+      media.removeEventListener("play", handlePlay);
+      media.removeEventListener("pause", handlePause);
+    };
+  }, [mediaElement, onTimeUpdate]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      switch (e.code) {
+        case "Space":
+          e.preventDefault();
+          togglePlay();
+          break;
+        case "ArrowLeft":
+          e.preventDefault();
+          seek(currentTime - 10);
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          seek(currentTime + 10);
+          break;
+        case "KeyM":
+          toggleMute();
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [currentTime]);
+
+  const togglePlay = () => {
+    if (!mediaElement) return;
+    if (isPlaying) {
+      mediaElement.pause();
+    } else {
+      mediaElement.play();
+    }
+  };
+
+  const seek = (time: number) => {
+    if (!mediaElement) return;
+    mediaElement.currentTime = Math.max(0, Math.min(time, duration));
+  };
+
+  const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!progressRef.current) return;
+    const rect = progressRef.current.getBoundingClientRect();
+    const percent = (e.clientX - rect.left) / rect.width;
+    seek(percent * duration);
+  };
+
+  const toggleMute = () => {
+    if (!mediaElement) return;
+    mediaElement.muted = !isMuted;
+    setIsMuted(!isMuted);
+  };
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!mediaElement) return;
+    const newVolume = parseFloat(e.target.value);
+    mediaElement.volume = newVolume;
+    setVolume(newVolume);
+    setIsMuted(newVolume === 0);
+  };
+
+  const handleSpeedChange = (speed: number) => {
+    if (!mediaElement) return;
+    mediaElement.playbackRate = speed;
+    setPlaybackSpeed(speed);
+    setShowSpeedMenu(false);
+  };
+
+  const handleAddBookmark = () => {
+    onAddBookmark?.(Math.floor(currentTime));
+  };
+
+  const handleOpenNoteInput = () => {
+    setNoteTimestamp(Math.floor(currentTime));
+    setShowNoteInput(true);
+  };
+
+  const handleSubmitNote = () => {
+    if (noteContent.trim()) {
+      onAddNote?.(noteTimestamp, noteContent.trim());
+      setNoteContent("");
+      setShowNoteInput(false);
+    }
+  };
+
+  const goToChapter = (chapter: Chapter) => {
+    seek(chapter.startTime);
+    setShowChapters(false);
+  };
+
+  const currentChapter = getCurrentChapter();
+
+  return (
+    <div className="w-full bg-gray-900 rounded-2xl overflow-hidden">
+      {/* Video/Audio element */}
+      {type === "VIDEO" ? (
+        <div className="relative aspect-video bg-black">
+          <video
+            ref={videoRef}
+            src={url}
+            className="w-full h-full"
+            onClick={togglePlay}
+          />
+          {!isPlaying && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <button
+                onClick={togglePlay}
+                className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
+              >
+                <Play className="w-10 h-10 ml-1" />
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="p-8 text-center bg-gradient-to-br from-purple-900/50 to-pink-900/50">
+          <div className="w-24 h-24 mx-auto mb-4 rounded-2xl bg-white/10 flex items-center justify-center">
+            <Volume2 className="w-12 h-12" />
+          </div>
+          <h3 className="font-semibold text-lg">{title}</h3>
+          {currentChapter && (
+            <p className="text-gray-400 text-sm mt-1">{currentChapter.title}</p>
+          )}
+          <audio ref={audioRef} src={url} className="hidden" />
+        </div>
+      )}
+
+      {/* Progress bar */}
+      <div className="px-4 pt-4">
+        <div
+          ref={progressRef}
+          className="relative h-2 bg-white/20 rounded-full cursor-pointer group"
+          onClick={handleProgressClick}
+        >
+          {/* Played progress */}
+          <div
+            className="absolute h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full"
+            style={{ width: `${(currentTime / duration) * 100}%` }}
+          />
+
+          {/* Chapter markers */}
+          {chapters.map((chapter) => (
+            <div
+              key={chapter.id}
+              className="absolute w-1 h-full bg-white/50 rounded-full"
+              style={{ left: `${(chapter.startTime / duration) * 100}%` }}
+              title={chapter.title}
+            />
+          ))}
+
+          {/* Bookmark markers */}
+          {bookmarks.map((bookmark) => (
+            <div
+              key={bookmark.id}
+              className="absolute w-2 h-2 bg-yellow-500 rounded-full -top-0.5 transform -translate-x-1/2"
+              style={{ left: `${(bookmark.timestamp / duration) * 100}%` }}
+              title={bookmark.label || `Bookmark at ${formatTime(bookmark.timestamp)}`}
+            />
+          ))}
+
+          {/* Scrubber handle */}
+          <div
+            className="absolute w-4 h-4 bg-white rounded-full -top-1 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+            style={{ left: `${(currentTime / duration) * 100}%` }}
+          />
+        </div>
+
+        {/* Time display */}
+        <div className="flex justify-between text-sm text-gray-400 mt-2">
+          <span>{formatTime(currentTime)}</span>
+          <span>{formatTime(duration)}</span>
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div className="p-4 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          {/* Skip back */}
+          <button
+            onClick={() => seek(currentTime - 10)}
+            className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+            title="Back 10s"
+          >
+            <SkipBack className="w-5 h-5" />
+          </button>
+
+          {/* Play/Pause */}
+          <button
+            onClick={togglePlay}
+            className="p-3 bg-white/10 rounded-full hover:bg-white/20 transition-colors"
+          >
+            {isPlaying ? (
+              <Pause className="w-6 h-6" />
+            ) : (
+              <Play className="w-6 h-6 ml-0.5" />
+            )}
+          </button>
+
+          {/* Skip forward */}
+          <button
+            onClick={() => seek(currentTime + 10)}
+            className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+            title="Forward 10s"
+          >
+            <SkipForward className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Center: Speed control */}
+        <div className="relative">
+          <button
+            onClick={() => setShowSpeedMenu(!showSpeedMenu)}
+            className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-sm font-medium flex items-center gap-1"
+          >
+            {playbackSpeed}x
+            <ChevronDown className="w-4 h-4" />
+          </button>
+
+          {showSpeedMenu && (
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-gray-800 border border-white/10 rounded-xl shadow-xl overflow-hidden">
+              {SPEED_OPTIONS.map((speed) => (
+                <button
+                  key={speed}
+                  onClick={() => handleSpeedChange(speed)}
+                  className={`w-full px-4 py-2 text-sm hover:bg-white/10 transition-colors ${
+                    playbackSpeed === speed ? "text-purple-400" : ""
+                  }`}
+                >
+                  {speed}x
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Right: Volume and actions */}
+        <div className="flex items-center gap-2">
+          {/* Volume */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleMute}
+              className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+            >
+              {isMuted || volume === 0 ? (
+                <VolumeX className="w-5 h-5" />
+              ) : (
+                <Volume2 className="w-5 h-5" />
+              )}
+            </button>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.1"
+              value={volume}
+              onChange={handleVolumeChange}
+              className="w-20 accent-purple-500"
+            />
+          </div>
+
+          {/* Bookmark */}
+          {onAddBookmark && (
+            <button
+              onClick={handleAddBookmark}
+              className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+              title="Add bookmark"
+            >
+              <BookmarkPlus className="w-5 h-5" />
+            </button>
+          )}
+
+          {/* Note */}
+          {onAddNote && (
+            <button
+              onClick={handleOpenNoteInput}
+              className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+              title="Add note"
+            >
+              <MessageSquarePlus className="w-5 h-5" />
+            </button>
+          )}
+
+          {/* Chapters */}
+          {chapters.length > 0 && (
+            <button
+              onClick={() => setShowChapters(!showChapters)}
+              className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+              title="Chapters"
+            >
+              <List className="w-5 h-5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Chapters panel */}
+      {showChapters && chapters.length > 0 && (
+        <div className="px-4 pb-4">
+          <div className="bg-white/5 rounded-xl p-3 max-h-48 overflow-y-auto">
+            {chapters.map((chapter, index) => (
+              <button
+                key={chapter.id}
+                onClick={() => goToChapter(chapter)}
+                className={`w-full text-left px-3 py-2 rounded-lg flex items-center gap-3 hover:bg-white/10 transition-colors ${
+                  currentChapter?.id === chapter.id ? "bg-purple-500/20" : ""
+                }`}
+              >
+                <span className="text-gray-400 text-sm w-12">
+                  {formatTime(chapter.startTime)}
+                </span>
+                <span className="flex-1 truncate">{chapter.title}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Note input */}
+      {showNoteInput && (
+        <div className="px-4 pb-4">
+          <div className="bg-white/5 rounded-xl p-3">
+            <p className="text-sm text-gray-400 mb-2">
+              Note at {formatTime(noteTimestamp)}
+            </p>
+            <textarea
+              value={noteContent}
+              onChange={(e) => setNoteContent(e.target.value)}
+              placeholder="Add your note..."
+              className="w-full bg-white/10 border border-white/10 rounded-lg p-3 text-sm resize-none focus:outline-none focus:border-purple-500"
+              rows={3}
+              autoFocus
+            />
+            <div className="flex justify-end gap-2 mt-2">
+              <button
+                onClick={() => setShowNoteInput(false)}
+                className="px-3 py-1.5 rounded-lg text-sm hover:bg-white/10 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmitNote}
+                className="px-3 py-1.5 rounded-lg text-sm bg-purple-600 hover:bg-purple-700 transition-colors"
+              >
+                Save Note
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notes display */}
+      {notes.length > 0 && !showNoteInput && (
+        <div className="px-4 pb-4">
+          <h4 className="text-sm font-medium text-gray-400 mb-2">Notes</h4>
+          <div className="space-y-2 max-h-32 overflow-y-auto">
+            {notes.map((note) => (
+              <button
+                key={note.id}
+                onClick={() => seek(note.timestamp)}
+                className="w-full text-left p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+              >
+                <span className="text-purple-400 text-xs">
+                  {formatTime(note.timestamp)}
+                </span>
+                <p className="text-sm line-clamp-2">{note.content}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

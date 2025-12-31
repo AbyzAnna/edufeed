@@ -1,0 +1,47 @@
+name = "edufeed-ai-worker"
+main = "workers/index.ts"
+compatibility_date = "2024-12-20"
+compatibility_flags = ["nodejs_compat"]
+
+# AI Binding for Workers AI (Llama 3.3)
+[ai]
+binding = "AI"
+
+# Vectorize binding for RAG (embeddings storage)
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "edufeed-embeddings"
+
+# KV for caching
+[[kv_namespaces]]
+binding = "CACHE"
+id = "b30043543e8143b1b77bcc547e5e830f"
+
+# R2 for audio file storage (optional - enable R2 in dashboard first)
+# [[r2_buckets]]
+# binding = "AUDIO_BUCKET"
+# bucket_name = "edufeed-audio"
+
+# D1 for temporary session data (optional)
+# [[d1_databases]]
+# binding = "DB_SESSIONS"
+# database_name = "edufeed-sessions"
+# database_id = "your-db-id"  # Run: wrangler d1 create edufeed-sessions
+
+# Environment variables
+[vars]
+ENVIRONMENT = "production"
+SUPABASE_URL = ""
+SUPABASE_ANON_KEY = ""
+
+# Secrets (set with: wrangler secret put <name>)
+# - SUPABASE_SERVICE_ROLE_KEY
+# - DATABASE_URL
+
+# Routes (if you want to use custom domain)
+# routes = [
+#   { pattern = "api.edufeed.com/ai/*", zone_name = "edufeed.com" }
+# ]
+
+[dev]
+port = 8787
