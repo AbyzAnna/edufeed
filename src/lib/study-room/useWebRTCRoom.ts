@@ -5,7 +5,7 @@
  * reactive state for video calling.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { WebRTCClient, Participant, MediaSettings, WebRTCEvents } from './webrtc';
 
 export interface UseWebRTCRoomOptions {
@@ -22,6 +22,7 @@ export interface UseWebRTCRoomReturn {
   isJoined: boolean;
   isJoining: boolean;
   error: Error | null;
+  connectionState: RTCPeerConnectionState | 'new';
 
   // Local media
   localStream: MediaStream | null;
@@ -47,6 +48,7 @@ export function useWebRTCRoom(options: UseWebRTCRoomOptions): UseWebRTCRoomRetur
   const [isJoined, setIsJoined] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [connectionState, setConnectionState] = useState<RTCPeerConnectionState | 'new'>('new');
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [isAudioOn, setIsAudioOn] = useState(initialMediaSettings?.audio ?? false);
   const [isVideoOn, setIsVideoOn] = useState(initialMediaSettings?.video ?? false);
@@ -55,9 +57,11 @@ export function useWebRTCRoom(options: UseWebRTCRoomOptions): UseWebRTCRoomRetur
 
   const clientRef = useRef<WebRTCClient | null>(null);
   const isMountedRef = useRef(true);
+  const autoJoinRef = useRef(autoJoin);
+  const initialSettingsRef = useRef(initialMediaSettings);
 
-  // Create event handlers
-  const events: WebRTCEvents = {
+  // Memoize event handlers to prevent recreation
+  const events = useMemo<WebRTCEvents>(() => ({
     onLocalStreamReady: (stream) => {
       if (isMountedRef.current) {
         setLocalStream(stream);
@@ -98,31 +102,19 @@ export function useWebRTCRoom(options: UseWebRTCRoomOptions): UseWebRTCRoomRetur
         );
       }
     },
+    onConnectionStateChange: (_peerId, state) => {
+      if (isMountedRef.current) {
+        setConnectionState(state);
+      }
+    },
     onError: (err) => {
       if (isMountedRef.current) {
         setError(err);
       }
     },
-  };
+  }), []);
 
-  // Initialize client
-  useEffect(() => {
-    isMountedRef.current = true;
-    clientRef.current = new WebRTCClient(roomId, userId, userName, userImage, events);
-
-    if (autoJoin) {
-      join(initialMediaSettings);
-    }
-
-    return () => {
-      isMountedRef.current = false;
-      if (clientRef.current) {
-        clientRef.current.leave();
-        clientRef.current = null;
-      }
-    };
-  }, [roomId, userId]);
-
+  // Join function - defined before useEffect that uses it
   const join = useCallback(async (settings?: Partial<MediaSettings>) => {
     if (!clientRef.current || isJoined || isJoining) return;
 
@@ -146,6 +138,45 @@ export function useWebRTCRoom(options: UseWebRTCRoomOptions): UseWebRTCRoomRetur
       setIsJoining(false);
     }
   }, [isJoined, isJoining, isAudioOn, isVideoOn]);
+
+  // Initialize client
+  useEffect(() => {
+    isMountedRef.current = true;
+    clientRef.current = new WebRTCClient(roomId, userId, userName, userImage, events);
+
+    // Use refs to avoid closure issues
+    if (autoJoinRef.current) {
+      const settings = initialSettingsRef.current;
+      // Delay auto-join to ensure client is ready
+      setTimeout(() => {
+        if (clientRef.current && isMountedRef.current) {
+          clientRef.current.join({
+            audio: settings?.audio ?? false,
+            video: settings?.video ?? false,
+            screenShare: false,
+          }).then(() => {
+            if (isMountedRef.current) {
+              setIsAudioOn(settings?.audio ?? false);
+              setIsVideoOn(settings?.video ?? false);
+              setIsJoined(true);
+            }
+          }).catch((err) => {
+            if (isMountedRef.current) {
+              setError(err instanceof Error ? err : new Error('Failed to join room'));
+            }
+          });
+        }
+      }, 100);
+    }
+
+    return () => {
+      isMountedRef.current = false;
+      if (clientRef.current) {
+        clientRef.current.leave();
+        clientRef.current = null;
+      }
+    };
+  }, [roomId, userId, userName, userImage, events]);
 
   const leave = useCallback(async () => {
     if (!clientRef.current || !isJoined) return;
@@ -196,6 +227,7 @@ export function useWebRTCRoom(options: UseWebRTCRoomOptions): UseWebRTCRoomRetur
     isJoined,
     isJoining,
     error,
+    connectionState,
     localStream,
     isAudioOn,
     isVideoOn,

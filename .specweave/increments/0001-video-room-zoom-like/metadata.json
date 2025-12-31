@@ -1,0 +1,18 @@
+{
+  "id": "0001-video-room-zoom-like",
+  "title": "Full Zoom-like Video Room Implementation",
+  "description": "Implement fully functional video conferencing with WebRTC - participants list, mute/unmute, video toggle, screen sharing, proper connect/disconnect - working on both mobile and web",
+  "status": "ready_for_review",
+  "priority": "high",
+  "createdAt": "2025-12-30T21:30:00Z",
+  "updatedAt": "2025-12-30T21:30:00Z",
+  "feature": "FS-001-study-room",
+  "tags": [
+    "video",
+    "webrtc",
+    "mobile",
+    "real-time",
+    "study-room"
+  ],
+  "updated": "2025-12-31T05:30:27.000Z"
+}

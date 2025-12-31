@@ -11,6 +11,7 @@ import { generateJSON, generateText } from './llm';
 /**
  * Generate NotebookLM-style audio overview
  * Creates podcast-like conversations discussing the content
+ * Uses Cloudflare Workers AI MeloTTS for text-to-speech
  */
 export async function generateAudioOverview(
   request: AudioOverviewRequest,
@@ -18,22 +19,31 @@ export async function generateAudioOverview(
 ): Promise<AudioOverviewResponse> {
   const { sourceId, style = 'conversational', duration = 300 } = request; // 5 min default
 
-  // 1. Get comprehensive content overview
-  const chunks = await searchRelevantChunks('main topics, key concepts, and interesting points', sourceId, 25, env);
-  const content = chunks.map((c) => c.content).join('\n\n');
+  try {
+    // 1. Get comprehensive content overview
+    const chunks = await searchRelevantChunks('main topics, key concepts, and interesting points', sourceId, 25, env);
+    const content = chunks.map((c) => c.content).join('\n\n');
 
-  // 2. Generate dialogue script
-  const script = await generateDialogueScript(content, style, duration, env);
+    if (!content || content.trim().length === 0) {
+      throw new Error('No content available to generate audio overview');
+    }
 
-  // 3. Generate audio from script using TTS
-  const audioResult = await synthesizeSpeech(script, env);
+    // 2. Generate dialogue script using Llama 3.3
+    const script = await generateDialogueScript(content, style, duration, env);
 
-  return {
-    audioUrl: audioResult.audioUrl,
-    transcript: script.fullTranscript,
-    speakers: script.speakers,
-    duration: audioResult.duration,
-  };
+    // 3. Generate audio from script using MeloTTS
+    const audioResult = await synthesizeSpeech(script, env);
+
+    return {
+      audioUrl: audioResult.audioUrl,
+      transcript: script.fullTranscript,
+      speakers: script.speakers,
+      duration: audioResult.duration,
+    };
+  } catch (error) {
+    console.error('Audio overview generation error:', error);
+    throw error;
+  }
 }
 
 /**
@@ -157,7 +167,8 @@ SPEAKER: dialogue text`;
 }
 
 /**
- * Synthesize speech from dialogue script
+ * Synthesize speech from dialogue script using MeloTTS
+ * MeloTTS is a high-quality multi-lingual TTS model available on Cloudflare Workers AI
  */
 async function synthesizeSpeech(
   script: { speakers: Speaker[]; fullTranscript: string },
@@ -168,6 +179,7 @@ async function synthesizeSpeech(
     timestamp: number;
     text: string;
     voice: string;
+    speakerName: string;
   }> = [];
 
   for (const speaker of script.speakers) {
@@ -176,64 +188,89 @@ async function synthesizeSpeech(
         timestamp: segment.timestamp,
         text: segment.text,
         voice: speaker.voice,
+        speakerName: speaker.name,
       });
     }
   }
 
   allSegments.sort((a, b) => a.timestamp - b.timestamp);
 
-  // Generate audio for each segment
+  // Generate audio for each segment using MeloTTS
   const audioChunks: ArrayBuffer[] = [];
   let totalDuration = 0;
 
   for (const segment of allSegments) {
     try {
-      // Use Cloudflare Workers AI TTS
-      // Note: As of Dec 2024, Workers AI supports text-to-speech
-      const ttsResponse = await env.AI.run('@cf/meta/m2m100-1.2b', {
+      // Skip empty segments
+      if (!segment.text || segment.text.trim().length === 0) continue;
+
+      // Use Cloudflare Workers AI MeloTTS for text-to-speech
+      // MeloTTS supports: 'en' (English), 'fr' (French)
+      const ttsResponse = await env.AI.run('@cf/myshell-ai/melotts', {
         text: segment.text,
-        source_lang: 'en',
-        target_lang: 'en',
+        lang: 'en', // English language
       });
 
-      // This is a placeholder - actual TTS model selection depends on availability
-      // You might need to use external TTS APIs like:
-      // - ElevenLabs (high quality, paid)
-      // - Google Cloud TTS
-      // - Azure TTS
-      // - Coqui TTS (open source)
+      // MeloTTS returns audio data as ArrayBuffer
+      if (ttsResponse && typeof ttsResponse === 'object') {
+        // Handle the response based on MeloTTS output format
+        let audioBuffer: ArrayBuffer;
 
-      // For now, we'll create a reference to external TTS
-      const audioBuffer = await synthesizeWithExternalTTS(segment.text, segment.voice, env);
-      audioChunks.push(audioBuffer);
+        if (ttsResponse instanceof ArrayBuffer) {
+          audioBuffer = ttsResponse;
+        } else if (ArrayBuffer.isView(ttsResponse)) {
+          audioBuffer = ttsResponse.buffer.slice(
+            ttsResponse.byteOffset,
+            ttsResponse.byteOffset + ttsResponse.byteLength
+          );
+        } else if ('audio' in ttsResponse && ttsResponse.audio) {
+          // Some TTS models return { audio: ArrayBuffer }
+          audioBuffer = ttsResponse.audio as ArrayBuffer;
+        } else {
+          console.warn('Unexpected TTS response format:', typeof ttsResponse);
+          continue;
+        }
 
-      // Estimate duration (rough calculation)
+        if (audioBuffer.byteLength > 0) {
+          audioChunks.push(audioBuffer);
+        }
+      }
+
+      // Estimate duration (rough calculation: 150 WPM average)
       const words = segment.text.split(/\s+/).length;
-      totalDuration += (words / 150) * 60; // 150 WPM average
+      totalDuration += (words / 150) * 60; // seconds
     } catch (error) {
-      console.error('TTS error:', error);
-      // Continue with other segments
+      console.error('TTS error for segment:', error, segment.text.substring(0, 50));
+      // Continue with other segments - don't fail the entire generation
     }
   }
 
-  // Combine audio chunks
+  // Combine audio chunks into single audio file
   const combinedAudio = combineAudioBuffers(audioChunks);
-
-  // Upload to R2 (if available)
   let audioUrl = '';
 
-  if (env.AUDIO_BUCKET) {
-    const audioKey = `audio-overviews/${crypto.randomUUID()}.mp3`;
-    await env.AUDIO_BUCKET.put(audioKey, combinedAudio, {
-      httpMetadata: {
-        contentType: 'audio/mpeg',
-      },
-    });
-    audioUrl = `https://audio.edufeed.com/${audioKey}`;
+  // Upload to R2 if available, otherwise return base64 data URL
+  if (env.AUDIO_BUCKET && combinedAudio.byteLength > 0) {
+    try {
+      const audioKey = `audio-overviews/${crypto.randomUUID()}.wav`;
+      await env.AUDIO_BUCKET.put(audioKey, combinedAudio, {
+        httpMetadata: {
+          contentType: 'audio/wav',
+        },
+      });
+      // TODO: Replace with your actual R2 public domain
+      audioUrl = `https://audio.edufeed.com/${audioKey}`;
+    } catch (r2Error) {
+      console.error('R2 upload error:', r2Error);
+      // Fall back to base64
+      audioUrl = createBase64AudioUrl(combinedAudio);
+    }
+  } else if (combinedAudio.byteLength > 0) {
+    // R2 not enabled or no audio - return base64 data URL
+    audioUrl = createBase64AudioUrl(combinedAudio);
   } else {
-    // R2 not enabled - return base64 data URL for now
-    const base64Audio = btoa(String.fromCharCode(...new Uint8Array(combinedAudio)));
-    audioUrl = `data:audio/mpeg;base64,${base64Audio}`;
+    // No audio generated - return transcript-only response
+    audioUrl = '';
   }
 
   return {
@@ -243,39 +280,24 @@ async function synthesizeSpeech(
 }
 
 /**
- * External TTS synthesis (placeholder for actual implementation)
+ * Create a base64 data URL from audio buffer
  */
-async function synthesizeWithExternalTTS(
-  text: string,
-  voice: string,
-  env: Env
-): Promise<ArrayBuffer> {
-  // This would integrate with external TTS service
-  // For example, ElevenLabs API:
-  /*
-  const response = await fetch('https://api.elevenlabs.io/v1/text-to-speech/voice_id', {
-    method: 'POST',
-    headers: {
-      'Accept': 'audio/mpeg',
-      'Content-Type': 'application/json',
-      'xi-api-key': env.ELEVENLABS_API_KEY,
-    },
-    body: JSON.stringify({
-      text,
-      model_id: 'eleven_monolingual_v1',
-      voice_settings: {
-        stability: 0.5,
-        similarity_boost: 0.5,
-      },
-    }),
-  });
+function createBase64AudioUrl(audioBuffer: ArrayBuffer): string {
+  if (audioBuffer.byteLength === 0) return '';
 
-  return await response.arrayBuffer();
-  */
+  // Convert to base64 in chunks to avoid call stack issues
+  const bytes = new Uint8Array(audioBuffer);
+  const chunkSize = 8192;
+  let base64 = '';
 
-  // Placeholder: return empty buffer
-  return new ArrayBuffer(0);
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.slice(i, i + chunkSize);
+    base64 += String.fromCharCode(...chunk);
+  }
+
+  return `data:audio/wav;base64,${btoa(base64)}`;
 }
+
 
 /**
  * Combine multiple audio buffers into one

@@ -14,6 +14,7 @@ import {
   CheckCircle,
   AlertCircle,
   Play,
+  Pause,
   MoreVertical,
   Trash2,
   Download,
@@ -135,6 +136,9 @@ function GeneratedNoteCard({
   onDelete: () => void;
 }) {
   const [showMenu, setShowMenu] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+
   const tool = STUDIO_TOOLS.find((t) => t.type === output.type);
   const Icon = tool?.icon || FileText;
   const color = tool?.color || "#6b7280";
@@ -142,6 +146,30 @@ function GeneratedNoteCard({
   const isCompleted = output.status === "COMPLETED";
   const isProcessing = output.status === "PROCESSING" || output.status === "PENDING";
   const isFailed = output.status === "FAILED";
+
+  // Get audio URL from output - check both direct audioUrl and content.audioUrl
+  const audioUrl = output.audioUrl || (output.content as Record<string, unknown>)?.audioUrl as string | undefined;
+
+  const handlePlayAudio = () => {
+    if (!audioUrl) return;
+
+    if (isPlaying && audioElement) {
+      audioElement.pause();
+      setIsPlaying(false);
+    } else {
+      // Create new audio element if needed
+      const audio = audioElement || new Audio(audioUrl);
+      if (!audioElement) {
+        audio.onended = () => setIsPlaying(false);
+        audio.onerror = () => {
+          console.error("Audio playback error");
+          setIsPlaying(false);
+        };
+        setAudioElement(audio);
+      }
+      audio.play().then(() => setIsPlaying(true)).catch((e) => console.error("Play failed:", e));
+    }
+  };
 
   return (
     <div className="group relative flex items-center gap-3 p-3 bg-white/5 hover:bg-white/8 rounded-lg transition-colors">
@@ -179,13 +207,14 @@ function GeneratedNoteCard({
       </div>
 
       {/* Actions */}
-      <div className="flex-shrink-0">
-        {isCompleted && output.audioUrl && (
+      <div className="flex-shrink-0 flex items-center">
+        {isCompleted && audioUrl && (
           <button
-            className="p-1.5 text-white/40 hover:text-white hover:bg-white/10 rounded transition-colors"
-            title="Play"
+            onClick={handlePlayAudio}
+            className={`p-1.5 rounded transition-colors ${isPlaying ? "text-purple-400 bg-purple-500/20" : "text-white/40 hover:text-white hover:bg-white/10"}`}
+            title={isPlaying ? "Pause" : "Play"}
           >
-            <Play className="w-4 h-4" />
+            {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
           </button>
         )}
 

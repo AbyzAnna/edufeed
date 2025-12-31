@@ -3,10 +3,7 @@
 .specweave/increments/*/logs/       # Gitignored, but structure preserved
 .specweave/increments/*/test-results/
 .specweave/docs-site-internal/      # Generated Docusaurus site for internal docs
-.specweave/state/jobs/              # Job configs may contain tokens
-.specweave/state/.processor.*       # Process locks
-.specweave/state/.watchdog*         # Watchdog state
-.specweave/state/analytics/         # Local analytics events
+.specweave/state/                   # All state files (jobs, analytics, locks, etc.)
 .claude-plugin/                     # Plugin marketplace (framework files)
 plugins/                            # Plugin implementations (framework files)
 
@@ -39,6 +36,7 @@ __pypackages__/        # Python
 *.class                # Java
 *.jar                  # Java
 bin/                   # Go, Java
+*.tsbuildinfo          # TypeScript incremental build
 
 # Environment
 .env

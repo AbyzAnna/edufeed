@@ -409,9 +409,39 @@ export default function StudyRoomView({ roomId }: StudyRoomViewProps) {
     );
   }
 
+  // Connection status indicator
+  const getConnectionStatusInfo = () => {
+    if (webrtc.error) {
+      return { color: 'bg-red-500', text: 'Error' };
+    }
+    switch (webrtc.connectionState) {
+      case 'connecting':
+        return { color: 'bg-yellow-500', text: 'Connecting...' };
+      case 'connected':
+        return { color: 'bg-green-500', text: 'Connected' };
+      case 'disconnected':
+        return { color: 'bg-orange-500', text: 'Reconnecting...' };
+      case 'failed':
+        return { color: 'bg-red-500', text: 'Connection failed' };
+      case 'closed':
+        return { color: 'bg-gray-500', text: 'Disconnected' };
+      default:
+        return { color: 'bg-green-500', text: 'Live' };
+    }
+  };
+
+  const connectionStatus = getConnectionStatusInfo();
+
   // Main call view
   return (
     <div className="h-screen bg-black flex flex-col overflow-hidden">
+      {/* Error banner */}
+      {webrtc.error && (
+        <div className="bg-red-500/20 border-b border-red-500/30 px-4 py-2 text-red-400 text-sm text-center">
+          {webrtc.error.message}
+        </div>
+      )}
+
       {/* Header */}
       <header className="flex-shrink-0 border-b border-white/10 bg-black/80 backdrop-blur-xl z-10">
         <div className="px-4 py-3 flex items-center justify-between">
@@ -425,9 +455,9 @@ export default function StudyRoomView({ roomId }: StudyRoomViewProps) {
             <div>
               <h1 className="text-lg font-semibold text-white flex items-center gap-2">
                 {room.title}
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                <span className="relative flex h-2 w-2" title={connectionStatus.text}>
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${connectionStatus.color} opacity-75`}></span>
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${connectionStatus.color}`}></span>
                 </span>
               </h1>
               <div className="flex items-center gap-3 text-sm text-white/50">

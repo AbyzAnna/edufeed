@@ -180,48 +180,54 @@ async function processYoutube(url: string): Promise<ProcessResult> {
     }
 
     const videoId = videoIdMatch[1];
+    const workersUrl = process.env.WORKERS_URL || "https://edufeed-ai-worker.steep-mouse-b843.workers.dev";
 
-    // Try to get transcript via YouTube API or third-party service
-    // For now, using a placeholder - in production use youtube-transcript-api or similar
-    const workersUrl = process.env.WORKERS_URL;
+    const response = await fetch(`${workersUrl}/api/youtube/transcript`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ videoId }),
+    });
 
-    if (workersUrl) {
-      const response = await fetch(`${workersUrl}/api/youtube/transcript`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoId }),
-      });
+    if (response.ok) {
+      const data = await response.json() as {
+        transcript?: string;
+        title?: string;
+        duration?: number;
+        channelName?: string;
+        hasTranscript?: boolean;
+        wordCount?: number;
+      };
 
-      if (response.ok) {
-        const data = await response.json();
-        const content = data.transcript || "";
-        const wordCount = content.split(/\s+/).length;
+      const content = data.transcript || "";
+      const wordCount = data.wordCount || content.split(/\s+/).filter(Boolean).length;
 
-        return {
-          content,
-          wordCount,
-          metadata: {
-            videoId,
-            title: data.title,
-            duration: data.duration,
-            channelName: data.channelName,
-          },
-        };
-      }
+      // Even if no transcript, we still have useful metadata
+      return {
+        content: content || `[YouTube Video: ${data.title || url}] - Transcript extraction in progress or not available.`,
+        wordCount: wordCount || 0,
+        metadata: {
+          videoId,
+          title: data.title,
+          duration: data.duration,
+          channelName: data.channelName,
+          hasTranscript: data.hasTranscript,
+          url,
+        },
+      };
     }
 
-    // Fallback: just store metadata without transcript
+    // Fallback: store video info without transcript
     return {
-      content: `[YouTube Video: ${url}] - Transcript not available. Please try again later.`,
-      wordCount: 0,
-      metadata: { videoId, url },
+      content: `[YouTube Video: ${url}] - Unable to extract transcript. The video may not have captions enabled.`,
+      wordCount: 15,
+      metadata: { videoId, url, hasTranscript: false },
     };
   } catch (error) {
     return {
-      content: "",
-      wordCount: 0,
-      error:
-        error instanceof Error ? error.message : "Failed to process YouTube video",
+      content: `[YouTube Video: ${url}] - Processing failed. Please try again.`,
+      wordCount: 8,
+      error: error instanceof Error ? error.message : "Failed to process YouTube video",
+      metadata: { url },
     };
   }
 }
@@ -254,38 +260,40 @@ async function processGoogleDoc(url: string): Promise<ProcessResult> {
 // Process Image (OCR)
 async function processImage(fileUrl: string): Promise<ProcessResult> {
   try {
-    const workersUrl = process.env.WORKERS_URL;
+    const workersUrl = process.env.WORKERS_URL || "https://edufeed-ai-worker.steep-mouse-b843.workers.dev";
 
-    if (workersUrl) {
-      const response = await fetch(`${workersUrl}/api/ocr`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl: fileUrl }),
-      });
+    const response = await fetch(`${workersUrl}/api/ocr`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageUrl: fileUrl }),
+    });
 
-      if (response.ok) {
-        const data = await response.json();
-        const content = data.text || "";
-        const wordCount = content.split(/\s+/).length;
+    if (response.ok) {
+      const data = await response.json() as { text?: string; success?: boolean };
+      const content = data.text || "";
+      const wordCount = content.split(/\s+/).filter(Boolean).length;
 
+      if (content) {
         return {
           content,
           wordCount,
-          metadata: { imageUrl: fileUrl },
+          metadata: { imageUrl: fileUrl, ocrSuccess: true },
         };
       }
     }
 
+    // Fallback: store image reference
     return {
-      content: "",
-      wordCount: 0,
-      error: "OCR service not available",
+      content: `[Image: ${fileUrl}] - Text extraction was not successful. The image may not contain readable text.`,
+      wordCount: 12,
+      metadata: { imageUrl: fileUrl, ocrSuccess: false },
     };
   } catch (error) {
     return {
-      content: "",
-      wordCount: 0,
+      content: `[Image: ${fileUrl}] - Processing failed.`,
+      wordCount: 4,
       error: error instanceof Error ? error.message : "Failed to process image",
+      metadata: { imageUrl: fileUrl },
     };
   }
 }
@@ -293,41 +301,44 @@ async function processImage(fileUrl: string): Promise<ProcessResult> {
 // Process Audio (transcription)
 async function processAudio(fileUrl: string): Promise<ProcessResult> {
   try {
-    const workersUrl = process.env.WORKERS_URL;
+    const workersUrl = process.env.WORKERS_URL || "https://edufeed-ai-worker.steep-mouse-b843.workers.dev";
 
-    if (workersUrl) {
-      const response = await fetch(`${workersUrl}/api/transcribe`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audioUrl: fileUrl }),
-      });
+    const response = await fetch(`${workersUrl}/api/transcribe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ audioUrl: fileUrl }),
+    });
 
-      if (response.ok) {
-        const data = await response.json();
-        const content = data.transcript || "";
-        const wordCount = content.split(/\s+/).length;
+    if (response.ok) {
+      const data = await response.json() as { transcript?: string; duration?: number; success?: boolean };
+      const content = data.transcript || "";
+      const wordCount = content.split(/\s+/).filter(Boolean).length;
 
+      if (content) {
         return {
           content,
           wordCount,
           metadata: {
             audioUrl: fileUrl,
             duration: data.duration,
+            transcriptionSuccess: true,
           },
         };
       }
     }
 
+    // Fallback: store audio reference
     return {
-      content: "",
-      wordCount: 0,
-      error: "Transcription service not available",
+      content: `[Audio: ${fileUrl}] - Transcription was not successful. Please try again or add content manually.`,
+      wordCount: 12,
+      metadata: { audioUrl: fileUrl, transcriptionSuccess: false },
     };
   } catch (error) {
     return {
-      content: "",
-      wordCount: 0,
+      content: `[Audio: ${fileUrl}] - Processing failed.`,
+      wordCount: 4,
       error: error instanceof Error ? error.message : "Failed to process audio",
+      metadata: { audioUrl: fileUrl },
     };
   }
 }
@@ -335,10 +346,14 @@ async function processAudio(fileUrl: string): Promise<ProcessResult> {
 // Create embeddings for vector search (RAG)
 async function createEmbeddings(sourceId: string, content: string): Promise<void> {
   try {
+    // Skip if content is too short
+    if (!content || content.length < 50) {
+      return;
+    }
+
     // Chunk content into smaller pieces (max ~500 tokens each)
     const chunks = chunkText(content, 2000); // ~500 words per chunk
-
-    const workersUrl = process.env.WORKERS_URL;
+    const workersUrl = process.env.WORKERS_URL || "https://edufeed-ai-worker.steep-mouse-b843.workers.dev";
 
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
@@ -346,7 +361,7 @@ async function createEmbeddings(sourceId: string, content: string): Promise<void
       // Get embedding from Cloudflare Workers AI
       let vectorId: string | undefined;
 
-      if (workersUrl) {
+      try {
         const response = await fetch(`${workersUrl}/api/embed`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -358,9 +373,11 @@ async function createEmbeddings(sourceId: string, content: string): Promise<void
         });
 
         if (response.ok) {
-          const data = await response.json();
+          const data = await response.json() as { vectorId?: string };
           vectorId = data.vectorId;
         }
+      } catch {
+        // Embedding generation failed, continue without vectorId
       }
 
       // Store embedding reference
