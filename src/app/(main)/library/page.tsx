@@ -71,7 +71,7 @@ export default function LibraryPage() {
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="text-center">
           <h2 className="text-2xl font-bold mb-4">Sign in to View Library</h2>
-          <p className="text-gray-400 mb-6">Access your sources and generated videos</p>
+          <p className="text-gray-400 mb-6">Access your sources and generated content</p>
           <button
             onClick={() => router.push("/login")}
             className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-xl transition-colors"
@@ -116,8 +116,8 @@ export default function LibraryPage() {
 
       if (!res.ok) throw new Error("Generation failed");
 
-      // Navigate to feed to see generated content
-      router.push("/feed");
+      // Navigate to notebooks to see generated content
+      router.push("/notebooks");
     } catch (error) {
       console.error("Error generating:", error);
     } finally {
@@ -287,7 +287,7 @@ export default function LibraryPage() {
                             }`}
                             onClick={() => {
                               if (item.status === "COMPLETED") {
-                                router.push("/feed");
+                                router.push("/notebooks");
                               }
                             }}
                           >

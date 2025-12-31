@@ -1,0 +1,105 @@
+{
+  "generatedAt": "2025-12-31T04:51:43.255Z",
+  "summary": {
+    "totalModules": 5,
+    "modulesDocumented": 0,
+    "modulesPartial": 5,
+    "modulesUndocumented": 0,
+    "totalWorkItems": 0,
+    "matchedWorkItems": 0,
+    "coveragePercent": 40
+  },
+  "priorityZones": [],
+  "immediateActions": [
+    {
+      "priority": 1,
+      "module": "app",
+      "action": "Add README based on existing test cases",
+      "files": [
+        "src/app/README.md"
+      ],
+      "reason": "Has test coverage but lacks documentation"
+    },
+    {
+      "priority": 2,
+      "module": "components",
+      "action": "Add README based on existing test cases",
+      "files": [
+        "src/components/README.md"
+      ],
+      "reason": "Has test coverage but lacks documentation"
+    }
+  ],
+  "moduleStatuses": [
+    {
+      "moduleName": "app",
+      "modulePath": "src/app",
+      "hasReadme": false,
+      "hasAnalysis": true,
+      "coverage": 40,
+      "workItemCount": 0,
+      "priority": "low",
+      "status": "partial"
+    },
+    {
+      "moduleName": "components",
+      "modulePath": "src/components",
+      "hasReadme": false,
+      "hasAnalysis": true,
+      "coverage": 40,
+      "workItemCount": 0,
+      "priority": "low",
+      "status": "partial"
+    },
+    {
+      "moduleName": "lib",
+      "modulePath": "src/lib",
+      "hasReadme": false,
+      "hasAnalysis": true,
+      "coverage": 40,
+      "workItemCount": 0,
+      "priority": "low",
+      "status": "partial"
+    },
+    {
+      "moduleName": "hooks",
+      "modulePath": "src/hooks",
+      "hasReadme": false,
+      "hasAnalysis": true,
+      "coverage": 40,
+      "workItemCount": 0,
+      "priority": "low",
+      "status": "partial"
+    },
+    {
+      "moduleName": "types",
+      "modulePath": "src/types",
+      "hasReadme": false,
+      "hasAnalysis": true,
+      "coverage": 40,
+      "workItemCount": 0,
+      "priority": "low",
+      "status": "partial"
+    }
+  ],
+  "additionalSources": [],
+  "notAnalyzed": [
+    {
+      "path": "src/app",
+      "reason": "Sampled (tier: large)",
+      "filesSkipped": 84
+    },
+    {
+      "path": "src/components",
+      "reason": "Sampled (tier: large)",
+      "filesSkipped": 27
+    },
+    {
+      "path": "src/lib",
+      "reason": "Sampled (tier: large)",
+      "filesSkipped": 14
+    }
+  ],
+  "painPointsAddressed": [],
+  "isUmbrella": false
+}

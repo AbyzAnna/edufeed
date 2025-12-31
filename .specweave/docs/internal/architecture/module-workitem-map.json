@@ -1,0 +1,52 @@
+{
+  "generatedAt": "2025-12-31T04:51:02.296Z",
+  "stats": {
+    "totalWorkItems": 0,
+    "matchedWorkItems": 0,
+    "unmatchedWorkItems": 0,
+    "modulesWithWorkItems": 0
+  },
+  "modules": {
+    "app": {
+      "moduleName": "app",
+      "modulePath": "src/app",
+      "matches": [],
+      "workItemCount": 0,
+      "priority": "low",
+      "docStatus": "none"
+    },
+    "components": {
+      "moduleName": "components",
+      "modulePath": "src/components",
+      "matches": [],
+      "workItemCount": 0,
+      "priority": "low",
+      "docStatus": "none"
+    },
+    "lib": {
+      "moduleName": "lib",
+      "modulePath": "src/lib",
+      "matches": [],
+      "workItemCount": 0,
+      "priority": "low",
+      "docStatus": "none"
+    },
+    "hooks": {
+      "moduleName": "hooks",
+      "modulePath": "src/hooks",
+      "matches": [],
+      "workItemCount": 0,
+      "priority": "low",
+      "docStatus": "none"
+    },
+    "types": {
+      "moduleName": "types",
+      "modulePath": "src/types",
+      "matches": [],
+      "workItemCount": 0,
+      "priority": "low",
+      "docStatus": "none"
+    }
+  },
+  "unmatchedItems": []
+}

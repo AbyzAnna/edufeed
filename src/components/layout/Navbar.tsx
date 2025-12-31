@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useAuth } from "@/components/providers/SessionProvider";
-import { Play, LogOut, BookOpen, Sparkles, MessageCircle } from "lucide-react";
+import { GraduationCap, LogOut, BookOpen, Users, MessageCircle, Layers } from "lucide-react";
 import NotificationBell from "@/components/social/NotificationBell";
 
 export default function Navbar() {
@@ -12,30 +12,22 @@ export default function Navbar() {
     <header className="fixed top-0 left-0 right-0 z-50 bg-black/90 backdrop-blur-lg border-b border-white/10 hidden md:block">
       <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2">
-          <Play className="w-8 h-8 text-purple-500 fill-purple-500" />
+          <GraduationCap className="w-8 h-8 text-purple-500" />
           <span className="text-xl font-bold">EduFeed</span>
         </Link>
 
         <nav className="flex items-center gap-6">
-          <Link href="/feed" className="text-gray-300 hover:text-white transition-colors">
-            Feed
-          </Link>
-          <Link href="/upload" className="text-gray-300 hover:text-white transition-colors">
-            Upload
-          </Link>
-          <Link href="/library" className="text-gray-300 hover:text-white transition-colors">
-            Library
+          <Link href="/notebooks" className="text-gray-300 hover:text-white transition-colors flex items-center gap-1">
+            <BookOpen className="w-4 h-4" />
+            Notebooks
           </Link>
           <Link href="/study" className="text-gray-300 hover:text-white transition-colors flex items-center gap-1">
-            <BookOpen className="w-4 h-4" />
-            Study
+            <Users className="w-4 h-4" />
+            Study Rooms
           </Link>
-          <Link
-            href="/generate"
-            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
-          >
-            <Sparkles className="w-4 h-4" />
-            Generate
+          <Link href="/library" className="text-gray-300 hover:text-white transition-colors flex items-center gap-1">
+            <Layers className="w-4 h-4" />
+            Library
           </Link>
         </nav>
 

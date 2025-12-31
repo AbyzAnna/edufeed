@@ -1,0 +1,63 @@
+{
+  "jobs": [
+    {
+      "id": "307e691d",
+      "type": "import-issues",
+      "status": "completed",
+      "progress": {
+        "current": 1,
+        "total": 100,
+        "percentage": 1,
+        "itemsCompleted": [],
+        "itemsFailed": [],
+        "currentItem": "Converting: edufeed",
+        "rate": 1.5,
+        "eta": 66
+      },
+      "startedAt": "2025-12-31T04:47:38.281Z",
+      "updatedAt": "2025-12-31T04:47:38.933Z",
+      "config": {
+        "type": "import-issues",
+        "provider": "github",
+        "projectPath": "/Users/annaabyzova/Projects/Website feed",
+        "timeRangeMonths": 999,
+        "repositories": [
+          "AbyzAnna/edufeed"
+        ]
+      },
+      "completedAt": "2025-12-31T04:47:38.933Z"
+    },
+    {
+      "id": "880f912d",
+      "type": "living-docs-builder",
+      "status": "completed",
+      "progress": {
+        "current": 0,
+        "total": 100,
+        "percentage": 0,
+        "itemsCompleted": [],
+        "itemsFailed": []
+      },
+      "startedAt": "2025-12-31T04:48:04.576Z",
+      "updatedAt": "2025-12-31T04:51:43.301Z",
+      "config": {
+        "type": "living-docs-builder",
+        "projectPath": "/Users/annaabyzova/Projects/Website feed",
+        "dependsOn": [
+          "307e691d"
+        ],
+        "userInputs": {
+          "additionalSources": [],
+          "priorityAreas": [],
+          "knownPainPoints": [],
+          "analysisDepth": "deep-native"
+        }
+      },
+      "dependsOn": [
+        "307e691d"
+      ],
+      "dependencyStatus": "ready",
+      "completedAt": "2025-12-31T04:51:43.301Z"
+    }
+  ]
+}

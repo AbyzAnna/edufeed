@@ -101,23 +101,29 @@ export class WebRTCClient {
 
     // Get local media stream
     if (settings.audio || settings.video) {
-      try {
-        this.localStream = await navigator.mediaDevices.getUserMedia({
-          audio: settings.audio ? {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          } : false,
-          video: settings.video ? {
-            width: { ideal: 1280, max: 1920 },
-            height: { ideal: 720, max: 1080 },
-            facingMode: 'user',
-          } : false,
-        });
-        this.events.onLocalStreamReady?.(this.localStream);
-      } catch (error) {
-        console.error('Failed to get local media:', error);
-        this.events.onError?.(error instanceof Error ? error : new Error('Failed to access camera/microphone'));
+      // Check if mediaDevices is available (requires HTTPS or localhost)
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+        console.warn('getUserMedia not available - requires HTTPS or localhost');
+        this.events.onError?.(new Error('Camera/microphone access requires HTTPS or localhost'));
+      } else {
+        try {
+          this.localStream = await navigator.mediaDevices.getUserMedia({
+            audio: settings.audio ? {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            } : false,
+            video: settings.video ? {
+              width: { ideal: 1280, max: 1920 },
+              height: { ideal: 720, max: 1080 },
+              facingMode: 'user',
+            } : false,
+          });
+          this.events.onLocalStreamReady?.(this.localStream);
+        } catch (error) {
+          console.error('Failed to get local media:', error);
+          this.events.onError?.(error instanceof Error ? error : new Error('Failed to access camera/microphone'));
+        }
       }
     }
 
@@ -233,6 +239,12 @@ export class WebRTCClient {
    * Start screen sharing
    */
   async startScreenShare(): Promise<MediaStream | null> {
+    // Check if getDisplayMedia is available
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
+      console.warn('getDisplayMedia not available');
+      return null;
+    }
+
     try {
       this.screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: {

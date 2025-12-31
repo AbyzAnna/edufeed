@@ -450,10 +450,10 @@ function GeneratePageContent() {
               {generatedIds.length} item{generatedIds.length !== 1 ? "s" : ""} created successfully.
             </p>
             <button
-              onClick={() => router.push("/feed")}
+              onClick={() => router.push("/notebooks")}
               className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-purple-600 hover:bg-purple-700 rounded-xl font-medium transition-colors"
             >
-              View in Feed
+              View Notebooks
               <ArrowRight className="w-5 h-5" />
             </button>
           </div>

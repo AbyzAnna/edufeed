@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Sparkles, BookOpen, MessageCircle, User, LucideIcon } from "lucide-react";
+import { BookOpen, Users, Layers, MessageCircle, User, LucideIcon } from "lucide-react";
 
 interface NavItem {
   href: string;
@@ -14,9 +14,9 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { href: "/feed", icon: Home, label: "Feed" },
-  { href: "/study", icon: BookOpen, label: "Study" },
-  { href: "/generate", icon: Sparkles, label: "Create", isSpecial: true },
+  { href: "/notebooks", icon: BookOpen, label: "Notebooks" },
+  { href: "/study", icon: Users, label: "Study", isSpecial: true },
+  { href: "/library", icon: Layers, label: "Library" },
   { href: "/messages", icon: MessageCircle, label: "Messages", hasBadge: true },
   { href: "/profile", icon: User, label: "Profile" },
 ];

@@ -96,6 +96,8 @@ export default function StudyRoomView({ roomId }: StudyRoomViewProps) {
   const [preJoinAudio, setPreJoinAudio] = useState(true);
   const [preJoinVideo, setPreJoinVideo] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
+  const previewStreamRef = useRef<MediaStream | null>(null);
 
   // WebRTC hook
   const webrtc = useWebRTCRoom({
@@ -124,6 +126,50 @@ export default function StudyRoomView({ roomId }: StudyRoomViewProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Handle preview video stream for pre-join screen
+  useEffect(() => {
+    if (!showPreJoin || !preJoinVideo) {
+      // Stop preview stream when not needed
+      if (previewStreamRef.current) {
+        previewStreamRef.current.getTracks().forEach(track => track.stop());
+        previewStreamRef.current = null;
+      }
+      return;
+    }
+
+    // Check if mediaDevices is available (requires HTTPS or localhost)
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      console.warn('getUserMedia not available - requires HTTPS or localhost');
+      return;
+    }
+
+    let cancelled = false;
+
+    navigator.mediaDevices
+      .getUserMedia({ video: true, audio: false })
+      .then((stream) => {
+        if (cancelled) {
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+        previewStreamRef.current = stream;
+        if (previewVideoRef.current) {
+          previewVideoRef.current.srcObject = stream;
+        }
+      })
+      .catch((error) => {
+        console.warn('Failed to get preview video:', error);
+      });
+
+    return () => {
+      cancelled = true;
+      if (previewStreamRef.current) {
+        previewStreamRef.current.getTracks().forEach(track => track.stop());
+        previewStreamRef.current = null;
+      }
+    };
+  }, [showPreJoin, preJoinVideo]);
 
   const fetchRoom = async () => {
     try {
@@ -271,20 +317,11 @@ export default function StudyRoomView({ roomId }: StudyRoomViewProps) {
             <div className="aspect-video bg-gray-800 flex items-center justify-center">
               {preJoinVideo ? (
                 <video
+                  ref={previewVideoRef}
                   autoPlay
                   muted
                   playsInline
                   className="w-full h-full object-cover scale-x-[-1]"
-                  ref={(video) => {
-                    if (video && !video.srcObject) {
-                      navigator.mediaDevices
-                        .getUserMedia({ video: true, audio: false })
-                        .then((stream) => {
-                          video.srcObject = stream;
-                        })
-                        .catch(console.error);
-                    }
-                  }}
                 />
               ) : (
                 <div className="w-24 h-24 rounded-full bg-purple-600 flex items-center justify-center text-4xl font-semibold text-white">

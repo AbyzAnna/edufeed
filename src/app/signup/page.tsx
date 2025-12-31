@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
-import { Play, Mail } from "lucide-react";
+import { GraduationCap, Mail } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -24,7 +24,7 @@ export default function SignupPage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=/feed`,
+        redirectTo: `${window.location.origin}/auth/callback?next=/notebooks`,
       },
     });
 
@@ -71,8 +71,8 @@ export default function SignupPage() {
         setNeedsEmailConfirmation(true);
         setSuccess(true);
       } else {
-        // Redirect to feed (shouldn't happen with current setup)
-        window.location.href = "/feed";
+        // Redirect to notebooks (shouldn't happen with current setup)
+        window.location.href = "/notebooks";
       }
     } catch (err) {
       setError("An error occurred. Please try again.");
@@ -115,7 +115,7 @@ export default function SignupPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2 mb-6">
-            <Play className="w-12 h-12 text-purple-500 fill-purple-500" />
+            <GraduationCap className="w-12 h-12 text-purple-500" />
             <span className="text-3xl font-bold">EduFeed</span>
           </Link>
           <h1 className="text-2xl font-semibold mb-2">Create your account</h1>

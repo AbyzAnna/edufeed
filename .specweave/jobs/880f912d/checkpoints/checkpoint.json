@@ -1,0 +1,238 @@
+{
+  "phase": "suggestions",
+  "progressPercent": 100,
+  "errors": [],
+  "lastUpdated": "2025-12-31T04:51:43.299Z",
+  "discovery": {
+    "codebaseStats": {
+      "totalFiles": 8634,
+      "totalDirs": 2029,
+      "byExtension": {
+        "": 94,
+        ".example": 2,
+        ".md": 22,
+        ".txt": 1,
+        ".yml": 1,
+        ".gradle": 3,
+        ".keystore": 1,
+        ".pro": 1,
+        ".xml": 11,
+        ".kt": 2,
+        ".png": 18,
+        ".webp": 15,
+        ".jar": 1,
+        ".properties": 2,
+        ".bat": 1,
+        ".tsx": 100,
+        ".json": 108,
+        ".js": 3,
+        ".ts": 125,
+        ".css": 2,
+        ".env": 1,
+        ".local": 1,
+        ".swift": 2,
+        ".h": 4952,
+        ".entitlements": 1,
+        ".plist": 65,
+        ".xcprivacy": 25,
+        ".storyboard": 1,
+        ".pbxproj": 2,
+        ".xcworkspacedata": 2,
+        ".xcscheme": 104,
+        ".lock": 2,
+        ".modulemap": 31,
+        ".gz": 6,
+        ".hpp": 2650,
+        ".m": 30,
+        ".pch": 29,
+        ".xcconfig": 190,
+        ".markdown": 1,
+        ".sh": 7,
+        ".xcfilelist": 6,
+        ".mjs": 2,
+        ".sql": 2,
+        ".prisma": 1,
+        ".svg": 5,
+        ".ico": 1,
+        ".tsbuildinfo": 1,
+        ".toml": 1
+      },
+      "byType": {
+        "code": 7826,
+        "tests": 10,
+        "docs": 23,
+        "config": 122,
+        "assets": 653
+      },
+      "estimatedLOC": 1368045
+    },
+    "techStack": {
+      "languages": [
+        "TypeScript"
+      ],
+      "frameworks": [
+        "Next.js",
+        "React"
+      ],
+      "buildTools": [],
+      "testFrameworks": [],
+      "detectedFrom": [
+        "package.json"
+      ]
+    },
+    "existingDocs": {
+      "readme": "README.md",
+      "contributing": null,
+      "docsFolder": null,
+      "wikiFolder": null,
+      "mdFiles": [
+        "AGENTS.md",
+        "AI_FEATURES_README.md",
+        "APPLE_APP_STORE_DEPLOYMENT.md",
+        "APP_STORE_CHECKLIST.md",
+        "APP_STORE_METADATA.md",
+        "APP_STORE_READY.md",
+        "ARCHITECTURE.md",
+        "CLAUDE.md",
+        "CLOUDFLARE_DEPLOYMENT.md",
+        "DEPLOYMENT_SUCCESS.md",
+        "FILES_CREATED.md",
+        "FINAL_SUMMARY.md",
+        "HOW_TO_USE_AI_FEATURES.md",
+        "IMPLEMENTATION_SUMMARY.md",
+        "IOS_BUILD_INSTRUCTIONS.md",
+        "PLAN.md",
+        "PRIVACY_POLICY.md",
+        "PRODUCTION_CHECKLIST.md",
+        "QUICK_START.md",
+        "README.md",
+        "README_AI.md"
+      ]
+    },
+    "entryPoints": {
+      "main": [],
+      "index": [],
+      "exports": []
+    },
+    "modules": [
+      {
+        "name": "app",
+        "path": "src/app",
+        "fileCount": 101,
+        "estimatedLOC": 12944,
+        "hasTests": false,
+        "hasReadme": false,
+        "entryPoints": [],
+        "extensions": {
+          ".tsx": 27,
+          ".ts": 72,
+          ".ico": 1,
+          ".css": 1
+        }
+      },
+      {
+        "name": "components",
+        "path": "src/components",
+        "fileCount": 42,
+        "estimatedLOC": 8294,
+        "hasTests": false,
+        "hasReadme": false,
+        "entryPoints": [
+          "social/index.ts",
+          "ui/index.ts"
+        ],
+        "extensions": {
+          ".tsx": 40,
+          ".ts": 2
+        }
+      },
+      {
+        "name": "lib",
+        "path": "src/lib",
+        "fileCount": 29,
+        "estimatedLOC": 3760,
+        "hasTests": false,
+        "hasReadme": false,
+        "entryPoints": [
+          "flashcards/index.ts",
+          "generation/index.ts"
+        ],
+        "extensions": {
+          ".ts": 29
+        }
+      },
+      {
+        "name": "hooks",
+        "path": "src/hooks",
+        "fileCount": 1,
+        "estimatedLOC": 140,
+        "hasTests": false,
+        "hasReadme": false,
+        "entryPoints": [],
+        "extensions": {
+          ".ts": 1
+        }
+      },
+      {
+        "name": "types",
+        "path": "src/types",
+        "fileCount": 1,
+        "estimatedLOC": 6,
+        "hasTests": false,
+        "hasReadme": false,
+        "entryPoints": [],
+        "extensions": {
+          ".ts": 1
+        }
+      }
+    ],
+    "tier": "large",
+    "samplingConfig": {
+      "tier": "large",
+      "filesPerDir": 3,
+      "priorityPatterns": [
+        "**/index.*",
+        "**/main.*",
+        "**/*.config.*",
+        "**/types.*",
+        "**/README.md"
+      ],
+      "skipPatterns": [
+        "node_modules/**",
+        "dist/**",
+        "build/**",
+        "coverage/**",
+        "**/*.test.*",
+        "**/*.spec.*",
+        "**/__tests__/**"
+      ]
+    },
+    "discoveredAt": "2025-12-31T04:48:19.146Z",
+    "umbrella": {
+      "isUmbrella": false,
+      "source": "none",
+      "childRepoCount": 0
+    }
+  },
+  "foundationPaths": [
+    "/Users/annaabyzova/Projects/Website feed/.specweave/docs/internal/architecture/overview.md",
+    "/Users/annaabyzova/Projects/Website feed/.specweave/docs/internal/architecture/tech-stack.md",
+    "/Users/annaabyzova/Projects/Website feed/.specweave/docs/internal/architecture/modules-skeleton.md"
+  ],
+  "matchingStats": {
+    "totalWorkItems": 0,
+    "matchedWorkItems": 0,
+    "unmatchedWorkItems": 0,
+    "modulesWithWorkItems": 0
+  },
+  "moduleAnalysis": {
+    "completed": [
+      "app",
+      "components",
+      "lib",
+      "hooks",
+      "types"
+    ],
+    "remaining": []
+  }
+}
