@@ -134,24 +134,39 @@ test.describe('Profile Page - Unauthenticated', () => {
 
 test.describe('Profile Page - Authenticated', () => {
   test.beforeEach(async ({ page }) => {
-    // Mock authenticated state
+    // Set up all Supabase auth API mocks BEFORE navigation
+    await mockAuthenticatedUser(page);
+
+    // Mock Supabase auth session in localStorage with proper format
     await page.addInitScript(() => {
-      // Mock Supabase auth state
-      window.localStorage.setItem('sb-xsajblfxxeztfzpzoevi-auth-token', JSON.stringify({
-        access_token: 'mock-token',
-        refresh_token: 'mock-refresh',
+      const session = {
+        access_token: 'mock-access-token-xyz',
+        token_type: 'bearer',
+        expires_in: 3600,
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        refresh_token: 'mock-refresh-token-xyz',
         user: {
           id: 'test-user-123',
+          aud: 'authenticated',
+          role: 'authenticated',
           email: 'test@example.com',
+          email_confirmed_at: '2024-01-01T00:00:00.000Z',
+          phone: '',
+          confirmed_at: '2024-01-01T00:00:00.000Z',
+          last_sign_in_at: '2024-01-01T00:00:00.000Z',
+          app_metadata: { provider: 'email', providers: ['email'] },
           user_metadata: {
             full_name: 'Test User',
             avatar_url: null,
           },
+          identities: [],
+          created_at: '2024-01-01T00:00:00.000Z',
+          updated_at: '2024-01-01T00:00:00.000Z',
         },
-      }));
+      };
+      // Supabase SSR stores in localStorage with project ref prefix
+      window.localStorage.setItem('sb-xsajblfxxeztfzpzoevi-auth-token', JSON.stringify(session));
     });
-
-    await mockAuthenticatedUser(page);
   });
 
   test('should display user profile card with avatar and name', async ({ page }) => {
@@ -376,22 +391,37 @@ test.describe('Profile Page - Authenticated', () => {
 
 test.describe('Profile Page - Responsive Design', () => {
   test.beforeEach(async ({ page }) => {
+    // Set up Supabase auth API mocks BEFORE navigation
+    await mockAuthenticatedUser(page);
+
     await page.addInitScript(() => {
-      window.localStorage.setItem('sb-xsajblfxxeztfzpzoevi-auth-token', JSON.stringify({
-        access_token: 'mock-token',
-        refresh_token: 'mock-refresh',
+      const session = {
+        access_token: 'mock-access-token-xyz',
+        token_type: 'bearer',
+        expires_in: 3600,
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        refresh_token: 'mock-refresh-token-xyz',
         user: {
           id: 'test-user-123',
+          aud: 'authenticated',
+          role: 'authenticated',
           email: 'test@example.com',
+          email_confirmed_at: '2024-01-01T00:00:00.000Z',
+          phone: '',
+          confirmed_at: '2024-01-01T00:00:00.000Z',
+          last_sign_in_at: '2024-01-01T00:00:00.000Z',
+          app_metadata: { provider: 'email', providers: ['email'] },
           user_metadata: {
             full_name: 'Test User',
             avatar_url: null,
           },
+          identities: [],
+          created_at: '2024-01-01T00:00:00.000Z',
+          updated_at: '2024-01-01T00:00:00.000Z',
         },
-      }));
+      };
+      window.localStorage.setItem('sb-xsajblfxxeztfzpzoevi-auth-token', JSON.stringify(session));
     });
-
-    await mockAuthenticatedUser(page);
   });
 
   test('should display correctly on mobile viewport', async ({ page }) => {
@@ -440,22 +470,37 @@ test.describe('Profile Page - Responsive Design', () => {
 
 test.describe('Profile Page - Visual Elements', () => {
   test.beforeEach(async ({ page }) => {
+    // Set up Supabase auth API mocks BEFORE navigation
+    await mockAuthenticatedUser(page);
+
     await page.addInitScript(() => {
-      window.localStorage.setItem('sb-xsajblfxxeztfzpzoevi-auth-token', JSON.stringify({
-        access_token: 'mock-token',
-        refresh_token: 'mock-refresh',
+      const session = {
+        access_token: 'mock-access-token-xyz',
+        token_type: 'bearer',
+        expires_in: 3600,
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        refresh_token: 'mock-refresh-token-xyz',
         user: {
           id: 'test-user-123',
+          aud: 'authenticated',
+          role: 'authenticated',
           email: 'test@example.com',
+          email_confirmed_at: '2024-01-01T00:00:00.000Z',
+          phone: '',
+          confirmed_at: '2024-01-01T00:00:00.000Z',
+          last_sign_in_at: '2024-01-01T00:00:00.000Z',
+          app_metadata: { provider: 'email', providers: ['email'] },
           user_metadata: {
             full_name: 'Test User',
             avatar_url: null,
           },
+          identities: [],
+          created_at: '2024-01-01T00:00:00.000Z',
+          updated_at: '2024-01-01T00:00:00.000Z',
         },
-      }));
+      };
+      window.localStorage.setItem('sb-xsajblfxxeztfzpzoevi-auth-token', JSON.stringify(session));
     });
-
-    await mockAuthenticatedUser(page);
   });
 
   test('should show avatar initial when no avatar URL', async ({ page }) => {
@@ -514,7 +559,41 @@ test.describe('Profile Page - Visual Elements', () => {
 
 test.describe('Profile Page - Loading States', () => {
   test('should show loading spinner initially', async ({ page }) => {
-    // Delay the response to simulate loading
+    // Mock Supabase auth API
+    await page.route('**/auth/v1/token?grant_type=refresh_token', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          access_token: 'mock-access-token',
+          token_type: 'bearer',
+          expires_in: 3600,
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          refresh_token: 'mock-refresh-token',
+          user: {
+            id: 'test-user-123',
+            aud: 'authenticated',
+            role: 'authenticated',
+            email: 'test@example.com',
+            user_metadata: { full_name: 'Test User', avatar_url: null },
+          },
+        }),
+      });
+    });
+
+    await page.route('**/auth/v1/user', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'test-user-123',
+          email: 'test@example.com',
+          user_metadata: { full_name: 'Test User', avatar_url: null },
+        }),
+      });
+    });
+
+    // Delay the stats response to simulate loading
     await page.route('**/api/user/stats', async (route) => {
       await new Promise(resolve => setTimeout(resolve, 1000));
       await route.fulfill({
@@ -528,6 +607,22 @@ test.describe('Profile Page - Loading States', () => {
       });
     });
 
+    await page.addInitScript(() => {
+      const session = {
+        access_token: 'mock-access-token-xyz',
+        token_type: 'bearer',
+        expires_in: 3600,
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        refresh_token: 'mock-refresh-token-xyz',
+        user: {
+          id: 'test-user-123',
+          email: 'test@example.com',
+          user_metadata: { full_name: 'Test User', avatar_url: null },
+        },
+      };
+      window.localStorage.setItem('sb-xsajblfxxeztfzpzoevi-auth-token', JSON.stringify(session));
+    });
+
     await page.goto('/profile');
 
     // During loading, spinner should be visible (this test may be flaky due to timing)
@@ -538,19 +633,54 @@ test.describe('Profile Page - Loading States', () => {
 
 test.describe('Profile Page - Error Handling', () => {
   test('should handle stats API error gracefully', async ({ page }) => {
+    // Mock Supabase auth API
+    await page.route('**/auth/v1/token?grant_type=refresh_token', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          access_token: 'mock-access-token',
+          token_type: 'bearer',
+          expires_in: 3600,
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          refresh_token: 'mock-refresh-token',
+          user: {
+            id: 'test-user-123',
+            aud: 'authenticated',
+            role: 'authenticated',
+            email: 'test@example.com',
+            user_metadata: { full_name: 'Test User', avatar_url: null },
+          },
+        }),
+      });
+    });
+
+    await page.route('**/auth/v1/user', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'test-user-123',
+          email: 'test@example.com',
+          user_metadata: { full_name: 'Test User', avatar_url: null },
+        }),
+      });
+    });
+
     await page.addInitScript(() => {
-      window.localStorage.setItem('sb-xsajblfxxeztfzpzoevi-auth-token', JSON.stringify({
-        access_token: 'mock-token',
-        refresh_token: 'mock-refresh',
+      const session = {
+        access_token: 'mock-access-token-xyz',
+        token_type: 'bearer',
+        expires_in: 3600,
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        refresh_token: 'mock-refresh-token-xyz',
         user: {
           id: 'test-user-123',
           email: 'test@example.com',
-          user_metadata: {
-            full_name: 'Test User',
-            avatar_url: null,
-          },
+          user_metadata: { full_name: 'Test User', avatar_url: null },
         },
-      }));
+      };
+      window.localStorage.setItem('sb-xsajblfxxeztfzpzoevi-auth-token', JSON.stringify(session));
     });
 
     // Mock stats API to return error
