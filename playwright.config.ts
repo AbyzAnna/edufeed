@@ -1,4 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
+import path from 'path';
+
+const authFile = path.join(__dirname, 'tests/.auth/user.json');
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -13,9 +16,19 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
+    // Setup project - runs auth setup first
+    {
+      name: 'setup',
+      testMatch: /auth\.setup\.ts/,
+    },
+    // Main tests depend on setup
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: authFile,
+      },
+      dependencies: ['setup'],
     },
   ],
   webServer: {

@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Settings,
   X,
+  Monitor,
 } from "lucide-react";
 import Link from "next/link";
 import Button from "@/components/ui/Button";
@@ -501,6 +502,7 @@ export default function StudyRoomView({ roomId }: StudyRoomViewProps) {
             isLocalVideoOn={webrtc.isVideoOn}
             isLocalScreenSharing={webrtc.isScreenSharing}
             participants={webrtc.participants}
+            screenShareStream={webrtc.screenShareStream}
           />
         </div>
 
@@ -524,63 +526,112 @@ export default function StudyRoomView({ roomId }: StudyRoomViewProps) {
                 <div className="flex flex-col h-full">
                   {/* Messages */}
                   <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                    {messages.map((msg) => (
-                      <div
-                        key={msg.id}
-                        className={`${
-                          msg.type === "SYSTEM"
-                            ? "text-center text-white/40 text-xs py-1"
-                            : msg.type === "AI_RESPONSE"
-                            ? "bg-purple-500/10 rounded-xl p-3"
-                            : ""
-                        }`}
-                      >
-                        {msg.type === "SYSTEM" ? (
-                          msg.content
-                        ) : (
-                          <>
-                            <div className="flex items-center gap-2 mb-1">
-                              {msg.type === "AI_RESPONSE" ? (
-                                <Bot className="w-4 h-4 text-purple-400" />
-                              ) : msg.user?.image ? (
-                                <img
-                                  src={msg.user.image}
-                                  alt=""
-                                  className="w-5 h-5 rounded-full"
-                                />
-                              ) : (
-                                <div className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-xs text-white/60">
-                                  {msg.user?.name?.charAt(0) || "?"}
-                                </div>
-                              )}
-                              <span className="text-sm font-medium text-white/80">
-                                {msg.type === "AI_RESPONSE" ? "AI Assistant" : msg.user?.name || "Unknown"}
+                    {messages.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full text-center px-4">
+                        <div className="w-12 h-12 rounded-full bg-purple-500/20 flex items-center justify-center mb-3">
+                          <MessageSquare className="w-6 h-6 text-purple-400" />
+                        </div>
+                        <p className="text-white/60 text-sm font-medium">No messages yet</p>
+                        <p className="text-white/40 text-xs mt-1">Start the conversation!</p>
+                        <p className="text-purple-400/60 text-xs mt-2">Tip: Type /ask to chat with AI</p>
+                      </div>
+                    ) : (
+                      messages.map((msg) => {
+                        const isOwnMessage = msg.user?.id === user?.id;
+                        const messageTime = new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                        if (msg.type === "SYSTEM") {
+                          return (
+                            <div key={msg.id} className="flex justify-center py-1">
+                              <span className="text-white/40 text-xs bg-white/5 px-3 py-1 rounded-full">
+                                {msg.content}
                               </span>
                             </div>
-                            <p className="text-sm text-white/70 pl-7">{msg.content}</p>
-                          </>
-                        )}
-                      </div>
-                    ))}
+                          );
+                        }
+
+                        if (msg.type === "AI_RESPONSE") {
+                          return (
+                            <div key={msg.id} className="flex gap-2">
+                              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center shadow-lg">
+                                <Bot className="w-4 h-4 text-white" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-xs font-semibold text-purple-400">AI Assistant</span>
+                                  <span className="text-[10px] text-white/30">{messageTime}</span>
+                                </div>
+                                <div className="bg-gradient-to-br from-purple-500/20 to-purple-600/10 rounded-2xl rounded-tl-sm px-3 py-2 border border-purple-500/20">
+                                  <p className="text-sm text-white/90 whitespace-pre-wrap">{msg.content}</p>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        // Regular user message
+                        return (
+                          <div key={msg.id} className={`flex gap-2 ${isOwnMessage ? 'flex-row-reverse' : ''}`}>
+                            {!isOwnMessage && (
+                              <div className="flex-shrink-0">
+                                {msg.user?.image ? (
+                                  <img
+                                    src={msg.user.image}
+                                    alt=""
+                                    className="w-8 h-8 rounded-full object-cover ring-2 ring-white/10"
+                                  />
+                                ) : (
+                                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-600 to-gray-700 flex items-center justify-center text-sm font-medium text-white ring-2 ring-white/10">
+                                    {msg.user?.name?.charAt(0).toUpperCase() || "?"}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            <div className={`flex-1 min-w-0 ${isOwnMessage ? 'flex flex-col items-end' : ''}`}>
+                              {!isOwnMessage && (
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-xs font-medium text-white/70">{msg.user?.name || "Unknown"}</span>
+                                  <span className="text-[10px] text-white/30">{messageTime}</span>
+                                </div>
+                              )}
+                              <div className={`max-w-[85%] ${
+                                isOwnMessage
+                                  ? 'bg-purple-600 rounded-2xl rounded-tr-sm'
+                                  : 'bg-white/10 rounded-2xl rounded-tl-sm'
+                              } px-3 py-2`}>
+                                <p className="text-sm text-white whitespace-pre-wrap break-words">{msg.content}</p>
+                              </div>
+                              {isOwnMessage && (
+                                <span className="text-[10px] text-white/30 mt-1 mr-1">{messageTime}</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
                     <div ref={messagesEndRef} />
                   </div>
 
                   {/* Input */}
-                  <form onSubmit={sendMessage} className="p-3 border-t border-white/10">
+                  <form onSubmit={sendMessage} className="p-3 border-t border-white/10 bg-black/30">
                     <div className="relative">
                       <input
                         type="text"
                         value={messageInput}
                         onChange={(e) => setMessageInput(e.target.value)}
                         placeholder="Type a message... (/ask for AI)"
-                        className="w-full px-4 py-2 pr-10 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/40 text-sm focus:outline-none focus:border-purple-500 transition-colors"
+                        className="w-full px-4 py-2.5 pr-12 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-white/40 text-sm focus:outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20 transition-all"
                       />
                       <button
                         type="submit"
                         disabled={!messageInput.trim() || sending}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-600/50 rounded-lg transition-colors"
+                        className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-xl transition-all ${
+                          messageInput.trim() && !sending
+                            ? 'bg-purple-600 hover:bg-purple-500 shadow-lg shadow-purple-500/20'
+                            : 'bg-white/10 text-white/30'
+                        }`}
                       >
-                        <Send className="w-3 h-3 text-white" />
+                        <Send className={`w-4 h-4 ${messageInput.trim() && !sending ? 'text-white' : 'text-white/30'}`} />
                       </button>
                     </div>
                   </form>
@@ -588,22 +639,40 @@ export default function StudyRoomView({ roomId }: StudyRoomViewProps) {
               )}
 
               {activePanel === "participants" && (
-                <div className="p-3 space-y-2">
+                <div className="p-3 space-y-1">
+                  {/* Header with count */}
+                  <div className="flex items-center justify-between px-2 py-2 mb-2">
+                    <span className="text-xs font-medium text-white/50 uppercase tracking-wider">In this call</span>
+                    <span className="text-xs font-semibold text-purple-400 bg-purple-500/20 px-2 py-0.5 rounded-full">
+                      {webrtc.participants.length + 1}
+                    </span>
+                  </div>
+
                   {/* Local user */}
-                  <div className="flex items-center gap-3 p-2 rounded-lg bg-white/5">
-                    <div className="relative">
+                  <div className="flex items-center gap-3 p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20">
+                    <div className="relative flex-shrink-0">
                       {(user?.user_metadata?.avatar_url || user?.user_metadata?.picture) ? (
-                        <img src={user.user_metadata.avatar_url || user.user_metadata.picture} alt="" className="w-10 h-10 rounded-full" />
+                        <img src={user.user_metadata.avatar_url || user.user_metadata.picture} alt="" className="w-10 h-10 rounded-full object-cover ring-2 ring-purple-500/30" />
                       ) : (
-                        <div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center text-white">
-                          {(user?.user_metadata?.name || user?.email)?.[0] || "?"}
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center text-white font-semibold ring-2 ring-purple-500/30">
+                          {(user?.user_metadata?.name || user?.email)?.[0]?.toUpperCase() || "?"}
                         </div>
                       )}
-                      <div className="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-black bg-green-500" />
+                      <div className="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-black bg-green-500 shadow-sm" />
                     </div>
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm text-white">{user?.user_metadata?.name || user?.email?.split("@")[0]} (You)</span>
+                        <span className="text-sm font-medium text-white truncate">{user?.user_metadata?.name || user?.email?.split("@")[0]}</span>
+                        <span className="text-[10px] text-purple-400 bg-purple-500/20 px-1.5 py-0.5 rounded font-medium">You</span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className={`text-xs ${webrtc.isAudioOn ? 'text-green-400' : 'text-red-400'}`}>
+                          {webrtc.isAudioOn ? 'Mic on' : 'Muted'}
+                        </span>
+                        <span className="text-white/20">•</span>
+                        <span className={`text-xs ${webrtc.isVideoOn ? 'text-green-400' : 'text-red-400'}`}>
+                          {webrtc.isVideoOn ? 'Camera on' : 'Camera off'}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -612,23 +681,52 @@ export default function StudyRoomView({ roomId }: StudyRoomViewProps) {
                   {webrtc.participants.map((participant) => (
                     <div
                       key={participant.peerId}
-                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5"
+                      className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-colors"
                     >
-                      <div className="relative">
+                      <div className="relative flex-shrink-0">
                         {participant.image ? (
-                          <img src={participant.image} alt="" className="w-10 h-10 rounded-full" />
+                          <img src={participant.image} alt="" className="w-10 h-10 rounded-full object-cover ring-2 ring-white/10" />
                         ) : (
-                          <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/60">
-                            {participant.name?.charAt(0) || "?"}
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-600 to-gray-700 flex items-center justify-center text-white font-semibold ring-2 ring-white/10">
+                            {participant.name?.charAt(0).toUpperCase() || "?"}
                           </div>
                         )}
-                        <div className="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-black bg-green-500" />
+                        <div className="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-black bg-green-500 shadow-sm" />
                       </div>
-                      <div className="flex-1">
-                        <span className="text-sm text-white">{participant.name}</span>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium text-white truncate block">{participant.name}</span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className={`text-xs ${participant.isAudioOn ? 'text-green-400' : 'text-red-400'}`}>
+                            {participant.isAudioOn ? 'Mic on' : 'Muted'}
+                          </span>
+                          <span className="text-white/20">•</span>
+                          <span className={`text-xs ${participant.isVideoOn ? 'text-green-400' : 'text-red-400'}`}>
+                            {participant.isVideoOn ? 'Camera on' : 'Camera off'}
+                          </span>
+                          {participant.isScreenSharing && (
+                            <>
+                              <span className="text-white/20">•</span>
+                              <span className="text-xs text-green-400 flex items-center gap-1">
+                                <Monitor className="w-3 h-3" />
+                                Sharing
+                              </span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
+
+                  {/* No other participants */}
+                  {webrtc.participants.length === 0 && (
+                    <div className="text-center py-8">
+                      <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-3">
+                        <Users className="w-6 h-6 text-white/30" />
+                      </div>
+                      <p className="text-white/50 text-sm">No other participants yet</p>
+                      <p className="text-white/30 text-xs mt-1">Share the room code to invite others</p>
+                    </div>
+                  )}
                 </div>
               )}
 

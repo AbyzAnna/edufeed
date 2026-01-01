@@ -200,11 +200,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         },
       });
 
-      return NextResponse.json({
-        ...output,
-        content: generatedContent,
-        status: generatedContent && typeof generatedContent === 'object' && Object.keys(generatedContent).length > 0 ? "COMPLETED" : "PROCESSING",
+      // Get the final status from database to ensure consistency
+      const updatedOutput = await prisma.notebookOutput.findUnique({
+        where: { id: output.id },
       });
+
+      return NextResponse.json(updatedOutput);
     } catch (genError) {
       console.error("Generation error:", genError);
 

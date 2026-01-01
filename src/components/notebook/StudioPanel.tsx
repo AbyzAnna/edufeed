@@ -100,8 +100,10 @@ function StudioToolButton({
 
   return (
     <button
+      data-testid={`studio-tool-${tool.type}`}
       onClick={onClick}
       disabled={disabled || generating}
+      aria-label={`Generate ${tool.label}`}
       className={`relative group p-3 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
         generating ? "animate-pulse" : ""
       }`}
@@ -201,6 +203,7 @@ function GeneratedNoteCard({
 
   return (
     <div
+      data-testid={`output-card-${output.type}`}
       className={`group relative flex items-center gap-3 p-3 bg-white/5 hover:bg-white/8 rounded-lg transition-colors ${canView ? "cursor-pointer" : ""}`}
       onClick={handleCardClick}
     >
@@ -320,6 +323,7 @@ export default function StudioPanel({
   const [generatingType, setGeneratingType] = useState<string | null>(null);
   const [selectedOutput, setSelectedOutput] = useState<Output | null>(null);
   const [localOutputs, setLocalOutputs] = useState<Output[]>(outputs);
+  const [error, setError] = useState<string | null>(null);
 
   // Sync with parent outputs
   useEffect(() => {
@@ -350,9 +354,14 @@ export default function StudioPanel({
   }, [localOutputs, notebookId]);
 
   const handleGenerate = async (type: string) => {
-    if (sourcesCount === 0) return;
+    if (sourcesCount === 0) {
+      setError("Add sources first to generate content");
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
 
     setGeneratingType(type);
+    setError(null);
 
     try {
       const response = await fetch(`/api/notebooks/${notebookId}/outputs`, {
@@ -368,9 +377,18 @@ export default function StudioPanel({
         const output = await response.json();
         onOutputGenerated(output);
         setLocalOutputs((prev) => [output, ...prev]);
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.error || `Failed to generate (${response.status})`;
+        setError(errorMessage);
+        setTimeout(() => setError(null), 5000);
+        console.error("Generation API error:", response.status, errorData);
       }
-    } catch (error) {
-      console.error("Failed to generate output:", error);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Network error - please try again";
+      setError(errorMessage);
+      setTimeout(() => setError(null), 5000);
+      console.error("Failed to generate output:", err);
     } finally {
       setGeneratingType(null);
     }
@@ -406,9 +424,19 @@ export default function StudioPanel({
           </p>
         </div>
 
+        {/* Error Message */}
+        {error && (
+          <div className="mx-4 mt-2 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+            <div className="flex items-center gap-2 text-red-400 text-xs">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+          </div>
+        )}
+
         {/* Tools Grid */}
         <div className="flex-shrink-0 p-4 border-b border-white/5">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2" data-testid="studio-tools-grid">
             {STUDIO_TOOLS.map((tool) => (
               <StudioToolButton
                 key={tool.type}

@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/supabase/auth";
 import { prisma } from "@/lib/prisma";
+import { OllamaClient } from "@/lib/ollama";
+import {
+  getNotebookContext,
+  formatContextForLLM,
+  extractCitations,
+} from "@/lib/notebook";
+import type { OllamaMessage } from "@/lib/ollama";
 
 interface RouteParams {
   params: Promise<{ notebookId: string }>;
@@ -75,7 +82,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// POST /api/notebooks/[notebookId]/chat - Send a message (AI grounded response)
+// POST /api/notebooks/[notebookId]/chat - Send a message (NotebookLM-style grounded response)
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getAuthSession();
@@ -94,8 +101,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Check access
-    const notebook = await prisma.notebook.findFirst({
+    // Check access (minimal query, full context fetched separately)
+    const notebookAccess = await prisma.notebook.findFirst({
       where: {
         id: notebookId,
         OR: [
@@ -108,29 +115,28 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           },
         ],
       },
-      include: {
-        NotebookSource: {
-          where: {
-            status: "COMPLETED",
-            // Filter by sourceIds if provided
-            ...(sourceIds && sourceIds.length > 0
-              ? { id: { in: sourceIds } }
-              : {}),
-          },
-          select: {
-            id: true,
-            title: true,
-            content: true,
-            type: true,
-          },
-        },
-      },
+      select: { id: true },
     });
 
-    if (!notebook) {
+    if (!notebookAccess) {
       return NextResponse.json(
         { error: "Notebook not found" },
         { status: 404 }
+      );
+    }
+
+    // Get comprehensive notebook context (NotebookLM-style)
+    const notebookContext = await getNotebookContext(notebookId, {
+      includeOutputs: true,
+      maxSources: 50,
+      maxMessages: 10,
+      sourceIds: sourceIds?.length > 0 ? sourceIds : undefined,
+    });
+
+    if (!notebookContext) {
+      return NextResponse.json(
+        { error: "Failed to load notebook context" },
+        { status: 500 }
       );
     }
 
@@ -145,50 +151,94 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       },
     });
 
-    // Build context from sources for RAG
-    const sourceContext = notebook.NotebookSource
-      .map((s) => `[Source: ${s.title}]\n${s.content || ""}`)
-      .join("\n\n---\n\n");
+    // Format context for LLM
+    const { systemPrompt, contextText, conversationHistory } = formatContextForLLM(
+      notebookContext,
+      { maxTokenEstimate: 6000, includeOutputs: true }
+    );
+
+    // Build messages for Ollama chat
+    const ollamaMessages: OllamaMessage[] = [
+      { role: "system", content: systemPrompt },
+      { role: "system", content: `\n\nNOTEBOOK CONTENT:\n\n${contextText}` },
+    ];
+
+    // Add conversation history for multi-turn context
+    for (const msg of conversationHistory) {
+      ollamaMessages.push({
+        role: msg.role === "user" ? "user" : "assistant",
+        content: msg.content,
+      });
+    }
+
+    // Add current message
+    ollamaMessages.push({ role: "user", content: message });
 
     // Call AI service for grounded response
     let aiResponse = "";
-    let citations: { sourceId: string; excerpt: string }[] = [];
+    let aiProvider = "none";
 
-    try {
-      // Use Cloudflare Workers AI or OpenAI
-      const workersUrl = process.env.WORKERS_URL;
+    // Try Ollama first (local, fast, private)
+    const ollama = new OllamaClient();
+    const ollamaAvailable = await ollama.isAvailable();
 
-      if (workersUrl) {
-        const response = await fetch(`${workersUrl}/api/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message,
-            context: sourceContext,
-            notebookId,
-            systemPrompt: `You are a helpful research assistant. Answer questions based ONLY on the provided source materials.
-If the answer cannot be found in the sources, say so clearly.
-When citing information, mention which source it comes from.
-Be concise and accurate.`,
-          }),
+    if (ollamaAvailable) {
+      try {
+        const response = await ollama.chat(ollamaMessages, {
+          temperature: 0.7,
+          maxTokens: 2048,
         });
+        aiResponse = response.content;
+        aiProvider = "ollama";
+      } catch (ollamaError) {
+        console.error("Ollama error:", ollamaError);
+      }
+    }
 
-        if (response.ok) {
-          const data = await response.json();
-          aiResponse = data.response || data.message;
-          citations = data.citations || [];
+    // Fallback to Cloudflare Workers if Ollama unavailable
+    if (!aiResponse) {
+      const workersUrl = process.env.WORKERS_URL;
+      if (workersUrl) {
+        try {
+          const response = await fetch(`${workersUrl}/api/chat`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              message,
+              context: contextText,
+              notebookId,
+              systemPrompt,
+            }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            aiResponse = data.response || data.message;
+            aiProvider = "workers";
+          }
+        } catch (workersError) {
+          console.error("Workers error:", workersError);
         }
       }
-
-      // Fallback if workers not available
-      if (!aiResponse) {
-        aiResponse = `Based on your ${notebook.NotebookSource.length} sources, I can help answer questions about the material. However, the AI service is currently unavailable. Please try again later.`;
-      }
-    } catch (aiError) {
-      console.error("AI service error:", aiError);
-      aiResponse =
-        "I apologize, but I'm having trouble connecting to the AI service right now. Please try again in a moment.";
     }
+
+    // Final fallback if all AI services unavailable
+    if (!aiResponse) {
+      aiResponse = `I have access to ${notebookContext.stats.totalSources} sources with ${notebookContext.stats.totalWords} total words in this notebook. However, the AI service is currently unavailable.
+
+**Notebook Summary:**
+- Title: ${notebookContext.notebook.title}
+- Sources: ${Object.entries(notebookContext.stats.sourcesByType)
+        .map(([type, count]) => `${type}: ${count}`)
+        .join(", ")}
+${notebookContext.stats.hasOutputs ? "- Generated outputs available (summaries, flashcards, etc.)" : ""}
+
+Please try again in a moment, or check that Ollama is running locally.`;
+      aiProvider = "fallback";
+    }
+
+    // Extract citations from the response
+    const extractedCitations = extractCitations(aiResponse, notebookContext.sources);
 
     // Save AI response with citations
     const assistantMessage = await prisma.notebookChat.create({
@@ -199,7 +249,7 @@ Be concise and accurate.`,
         role: "ASSISTANT",
         content: aiResponse,
         NotebookCitation: {
-          create: citations.map((c) => ({
+          create: extractedCitations.map((c) => ({
             id: crypto.randomUUID(),
             sourceId: c.sourceId,
             excerpt: c.excerpt,
@@ -224,6 +274,12 @@ Be concise and accurate.`,
     return NextResponse.json({
       userMessage,
       assistantMessage,
+      meta: {
+        provider: aiProvider,
+        sourcesUsed: notebookContext.stats.totalSources,
+        totalWords: notebookContext.stats.totalWords,
+        citationsFound: extractedCitations.length,
+      },
     });
   } catch (error) {
     console.error("Error in chat:", error);

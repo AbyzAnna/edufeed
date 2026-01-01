@@ -6,6 +6,13 @@ export async function updateSession(request: NextRequest) {
     request,
   })
 
+  // Check for E2E test mode bypass via cookie
+  const isE2ETest = request.cookies.get('e2e-test-mode')?.value === 'true'
+  if (isE2ETest && process.env.NODE_ENV !== 'production') {
+    // In test mode, skip auth checks
+    return supabaseResponse
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -38,7 +45,7 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   // Protected routes - redirect to login if not authenticated
-  const protectedPaths = ['/feed', '/study', '/profile', '/upload', '/generate', '/library', '/discover']
+  const protectedPaths = ['/feed', '/study', '/study-room', '/study-rooms', '/profile', '/upload', '/generate', '/library', '/discover', '/notebook', '/notebooks', '/messages']
   const isProtectedPath = protectedPaths.some(path =>
     request.nextUrl.pathname.startsWith(path)
   )

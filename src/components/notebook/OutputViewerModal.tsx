@@ -171,13 +171,17 @@ function AudioOverviewViewer({ output }: { output: Output }) {
   const [duration, setDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
 
-  const content = output.content as {
+  // Handle various content structures from API
+  const rawContent = output.content as Record<string, unknown>;
+  const nestedContent = rawContent?.content as {
     script?: Array<{ speaker: string; text: string }>;
     duration?: number;
     audioUrl?: string;
-  };
+  } | undefined;
 
-  const audioUrl = output.audioUrl || content?.audioUrl;
+  // Try multiple paths to find audio data
+  const script = (rawContent?.script as Array<{ speaker: string; text: string }>) || nestedContent?.script || [];
+  const audioUrl = output.audioUrl || (rawContent?.audioUrl as string) || nestedContent?.audioUrl;
 
   const togglePlay = () => {
     if (!audioRef.current) return;
@@ -289,11 +293,11 @@ function AudioOverviewViewer({ output }: { output: Output }) {
       )}
 
       {/* Transcript */}
-      {content?.script && content.script.length > 0 && (
+      {script.length > 0 && (
         <div>
           <h3 className="text-lg font-semibold text-white mb-4">Transcript</h3>
           <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-            {content.script.map((segment, index) => (
+            {script.map((segment, index) => (
               <div key={index} className="flex gap-3">
                 <div className="flex-shrink-0 w-20 text-sm font-medium text-purple-400">
                   {segment.speaker}
@@ -305,7 +309,7 @@ function AudioOverviewViewer({ output }: { output: Output }) {
         </div>
       )}
 
-      {!audioUrl && (!content?.script || content.script.length === 0) && (
+      {!audioUrl && script.length === 0 && (
         <div className="text-center py-12">
           <Mic className="w-12 h-12 text-white/30 mx-auto mb-4" />
           <p className="text-white/50">Audio content is being generated...</p>
@@ -318,15 +322,16 @@ function AudioOverviewViewer({ output }: { output: Output }) {
 // ==================== Video Overview Viewer ====================
 
 function VideoOverviewViewer({ output }: { output: Output }) {
-  const content = output.content as {
-    segments?: Array<{
-      title: string;
-      narration: string;
-      visualDescription: string;
-      duration: string;
-    }>;
+  // Handle various content structures from API
+  const rawContent = output.content as Record<string, unknown>;
+  const nestedContent = rawContent?.content as {
+    segments?: Array<{ title: string; narration: string; visualDescription: string; duration: string }>;
     totalDuration?: string;
-  };
+  } | undefined;
+
+  // Try multiple paths to find video data
+  const segments = (rawContent?.segments as Array<{ title: string; narration: string; visualDescription: string; duration: string }>) || nestedContent?.segments || [];
+  const totalDuration = (rawContent?.totalDuration as string) || nestedContent?.totalDuration;
 
   return (
     <div className="p-6 space-y-6">
@@ -334,9 +339,9 @@ function VideoOverviewViewer({ output }: { output: Output }) {
         <div className="flex items-center gap-3 mb-4">
           <Video className="w-6 h-6 text-pink-400" />
           <h3 className="text-lg font-semibold text-white">Video Script</h3>
-          {content?.totalDuration && (
+          {totalDuration && (
             <span className="text-sm text-white/50 ml-auto">
-              Total: {content.totalDuration}
+              Total: {totalDuration}
             </span>
           )}
         </div>
@@ -345,9 +350,9 @@ function VideoOverviewViewer({ output }: { output: Output }) {
         </p>
       </div>
 
-      {content?.segments && content.segments.length > 0 ? (
+      {segments.length > 0 ? (
         <div className="space-y-6">
-          {content.segments.map((segment, index) => (
+          {segments.map((segment, index) => (
             <div
               key={index}
               className="bg-white/5 rounded-xl p-5 border border-white/10"
@@ -397,13 +402,13 @@ function VideoOverviewViewer({ output }: { output: Output }) {
 // ==================== Mind Map Viewer ====================
 
 function MindMapViewer({ output }: { output: Output }) {
-  const content = output.content as {
-    centralTopic?: string;
-    branches?: Array<{
-      topic: string;
-      subtopics?: string[];
-    }>;
-  };
+  // Handle various content structures from API
+  const rawContent = output.content as Record<string, unknown>;
+  const nestedContent = rawContent?.content as { centralTopic?: string; branches?: Array<{ topic: string; subtopics?: string[] }> } | undefined;
+
+  // Try multiple paths to find mind map data
+  const centralTopic = (rawContent?.centralTopic as string) || nestedContent?.centralTopic;
+  const branches = (rawContent?.branches as Array<{ topic: string; subtopics?: string[] }>) || nestedContent?.branches || [];
 
   const colors = [
     "#8b5cf6", "#ec4899", "#f59e0b", "#10b981", "#3b82f6", "#ef4444"
@@ -411,17 +416,17 @@ function MindMapViewer({ output }: { output: Output }) {
 
   return (
     <div className="p-6">
-      {content?.centralTopic && content?.branches ? (
+      {centralTopic && branches.length > 0 ? (
         <div className="min-h-[500px] relative">
           {/* Central Topic */}
           <div className="flex flex-col items-center">
             <div className="bg-gradient-to-br from-amber-500 to-orange-600 text-white px-8 py-4 rounded-2xl text-xl font-bold shadow-lg shadow-amber-500/30 mb-8">
-              {content.centralTopic}
+              {centralTopic}
             </div>
 
             {/* Branches Grid */}
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 w-full">
-              {content.branches.map((branch, index) => (
+              {branches.map((branch, index) => (
                 <div
                   key={index}
                   className="rounded-xl p-4 border"
@@ -470,7 +475,9 @@ function MindMapViewer({ output }: { output: Output }) {
 // ==================== Summary/Report Viewer ====================
 
 function SummaryViewer({ output }: { output: Output }) {
-  const content = output.content as {
+  // Handle various content structures from API
+  const rawContent = output.content as Record<string, unknown>;
+  const nestedContent = rawContent?.content as {
     summary?: string;
     keyPoints?: string[];
     themes?: string[];
@@ -478,31 +485,40 @@ function SummaryViewer({ output }: { output: Output }) {
     keyFindings?: string[];
     recommendations?: string[];
     actionItems?: string[];
-  };
+  } | undefined;
+
+  // Try multiple paths to find summary data
+  const summary = (rawContent?.summary as string) || nestedContent?.summary;
+  const executiveSummary = (rawContent?.executiveSummary as string) || nestedContent?.executiveSummary;
+  const keyPoints = (rawContent?.keyPoints as string[]) || nestedContent?.keyPoints;
+  const keyFindings = (rawContent?.keyFindings as string[]) || nestedContent?.keyFindings;
+  const themes = (rawContent?.themes as string[]) || nestedContent?.themes;
+  const recommendations = (rawContent?.recommendations as string[]) || nestedContent?.recommendations;
+  const actionItems = (rawContent?.actionItems as string[]) || nestedContent?.actionItems;
 
   return (
     <div className="p-6 space-y-6">
       {/* Main Summary */}
-      {(content?.summary || content?.executiveSummary) && (
+      {(summary || executiveSummary) && (
         <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-5">
           <h3 className="text-blue-400 font-semibold mb-3 flex items-center gap-2">
             <FileText className="w-5 h-5" />
-            {content?.executiveSummary ? "Executive Summary" : "Summary"}
+            {executiveSummary ? "Executive Summary" : "Summary"}
           </h3>
           <p className="text-white/80 leading-relaxed">
-            {content?.summary || content?.executiveSummary}
+            {summary || executiveSummary}
           </p>
         </div>
       )}
 
       {/* Key Points / Findings */}
-      {(content?.keyPoints || content?.keyFindings) && (
+      {(keyPoints || keyFindings) && (
         <div>
           <h3 className="text-lg font-semibold text-white mb-4">
-            {content?.keyFindings ? "Key Findings" : "Key Points"}
+            {keyFindings ? "Key Findings" : "Key Points"}
           </h3>
           <ul className="space-y-3">
-            {(content?.keyPoints || content?.keyFindings || []).map((point, index) => (
+            {(keyPoints || keyFindings || []).map((point, index) => (
               <li key={index} className="flex items-start gap-3">
                 <span className="w-6 h-6 bg-blue-500/20 text-blue-400 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">
                   {index + 1}
@@ -515,11 +531,11 @@ function SummaryViewer({ output }: { output: Output }) {
       )}
 
       {/* Themes */}
-      {content?.themes && content.themes.length > 0 && (
+      {themes && themes.length > 0 && (
         <div>
           <h3 className="text-lg font-semibold text-white mb-3">Themes</h3>
           <div className="flex flex-wrap gap-2">
-            {content.themes.map((theme, index) => (
+            {themes.map((theme, index) => (
               <span
                 key={index}
                 className="px-3 py-1.5 bg-purple-500/20 text-purple-300 rounded-full text-sm"
@@ -532,11 +548,11 @@ function SummaryViewer({ output }: { output: Output }) {
       )}
 
       {/* Recommendations */}
-      {content?.recommendations && content.recommendations.length > 0 && (
+      {recommendations && recommendations.length > 0 && (
         <div>
           <h3 className="text-lg font-semibold text-white mb-3">Recommendations</h3>
           <ul className="space-y-2">
-            {content.recommendations.map((rec, index) => (
+            {recommendations.map((rec, index) => (
               <li key={index} className="flex items-start gap-2 text-white/70">
                 <Check className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
                 {rec}
@@ -547,11 +563,11 @@ function SummaryViewer({ output }: { output: Output }) {
       )}
 
       {/* Action Items */}
-      {content?.actionItems && content.actionItems.length > 0 && (
+      {actionItems && actionItems.length > 0 && (
         <div>
           <h3 className="text-lg font-semibold text-white mb-3">Action Items</h3>
           <ul className="space-y-2">
-            {content.actionItems.map((item, index) => (
+            {actionItems.map((item, index) => (
               <li key={index} className="flex items-start gap-2 text-white/70">
                 <div className="w-5 h-5 border-2 border-white/30 rounded flex-shrink-0 mt-0.5" />
                 {item}
@@ -561,7 +577,7 @@ function SummaryViewer({ output }: { output: Output }) {
         </div>
       )}
 
-      {!content?.summary && !content?.executiveSummary && !content?.keyPoints && !content?.keyFindings && (
+      {!summary && !executiveSummary && !keyPoints && !keyFindings && (
         <div className="text-center py-12">
           <FileText className="w-12 h-12 text-white/30 mx-auto mb-4" />
           <p className="text-white/50">Report is being generated...</p>
@@ -578,15 +594,16 @@ function FlashcardViewer({ output }: { output: Output }) {
   const [isFlipped, setIsFlipped] = useState(false);
   const [masteredCards, setMasteredCards] = useState<Set<number>>(new Set());
 
-  const content = output.content as {
-    cards?: Array<{
-      front: string;
-      back: string;
-      hint?: string;
-    }>;
-  };
+  // Handle various content structures from API
+  const rawContent = output.content as Record<string, unknown>;
+  const content = rawContent?.content as { cards?: Array<{ front: string; back: string; hint?: string }> } | undefined;
 
-  const cards = content?.cards || [];
+  // Try multiple paths to find cards array
+  const cards = (
+    (rawContent?.cards as Array<{ front: string; back: string; hint?: string }>) ||
+    content?.cards ||
+    []
+  );
 
   const handleNext = () => {
     if (currentIndex < cards.length - 1) {
@@ -742,17 +759,16 @@ function QuizViewer({ output }: { output: Output }) {
   const [showResults, setShowResults] = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
 
-  const content = output.content as {
-    questions?: Array<{
-      type: string;
-      question: string;
-      options?: string[];
-      correctAnswer: string;
-      explanation?: string;
-    }>;
-  };
+  // Handle various content structures from API
+  const rawContent = output.content as Record<string, unknown>;
+  const nestedContent = rawContent?.content as { questions?: Array<{ type: string; question: string; options?: string[]; correctAnswer: string; explanation?: string }> } | undefined;
 
-  const questions = content?.questions || [];
+  // Try multiple paths to find questions array
+  const questions = (
+    (rawContent?.questions as Array<{ type: string; question: string; options?: string[]; correctAnswer: string; explanation?: string }>) ||
+    nestedContent?.questions ||
+    []
+  );
 
   if (!questions || questions.length === 0) {
     return (

@@ -26,6 +26,7 @@ export interface UseWebRTCRoomReturn {
 
   // Local media
   localStream: MediaStream | null;
+  screenShareStream: MediaStream | null;
   isAudioOn: boolean;
   isVideoOn: boolean;
   isScreenSharing: boolean;
@@ -50,6 +51,7 @@ export function useWebRTCRoom(options: UseWebRTCRoomOptions): UseWebRTCRoomRetur
   const [error, setError] = useState<Error | null>(null);
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState | 'new'>('new');
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [screenShareStream, setScreenShareStream] = useState<MediaStream | null>(null);
   const [isAudioOn, setIsAudioOn] = useState(initialMediaSettings?.audio ?? false);
   const [isVideoOn, setIsVideoOn] = useState(initialMediaSettings?.video ?? false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -212,6 +214,7 @@ export function useWebRTCRoom(options: UseWebRTCRoomOptions): UseWebRTCRoomRetur
     if (!clientRef.current || !isJoined) return null;
     const stream = await clientRef.current.startScreenShare();
     if (stream) {
+      setScreenShareStream(stream);
       setIsScreenSharing(true);
     }
     return stream;
@@ -220,6 +223,7 @@ export function useWebRTCRoom(options: UseWebRTCRoomOptions): UseWebRTCRoomRetur
   const stopScreenShare = useCallback(() => {
     if (!clientRef.current || !isJoined) return;
     clientRef.current.stopScreenShare();
+    setScreenShareStream(null);
     setIsScreenSharing(false);
   }, [isJoined]);
 
@@ -229,6 +233,7 @@ export function useWebRTCRoom(options: UseWebRTCRoomOptions): UseWebRTCRoomRetur
     error,
     connectionState,
     localStream,
+    screenShareStream,
     isAudioOn,
     isVideoOn,
     isScreenSharing,
