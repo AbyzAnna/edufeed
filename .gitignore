@@ -1,19 +1,19 @@
 # SpecWeave
 .specweave/cache/
-.specweave/increments/*/logs/       # Gitignored, but structure preserved
+.specweave/increments/*/logs/
 .specweave/increments/*/test-results/
-.specweave/docs-site-internal/      # Generated Docusaurus site for internal docs
-.specweave/state/                   # All state files (jobs, analytics, locks, etc.)
-.claude-plugin/                     # Plugin marketplace (framework files)
-plugins/                            # Plugin implementations (framework files)
+.specweave/docs-site-internal/
+.specweave/state/
+.claude-plugin/
+plugins/
 
-# Dependencies (framework-agnostic)
-node_modules/          # JavaScript/TypeScript
+# Dependencies
+node_modules/
 **/node_modules/
 .pnpm-store/
 .yarn/
 .npm/
-__pycache__/           # Python
+__pycache__/
 *.pyc
 *.pyo
 *.pyd
@@ -21,26 +21,26 @@ __pycache__/           # Python
 venv/
 env/
 ENV/
-target/                # Rust
+target/
 Cargo.lock
-vendor/                # Go
+vendor/
 go.sum
 
-# Build outputs (framework-agnostic)
-.next/                 # NextJS
-**/.next/              # NextJS in subfolders
-dist/                  # Generic
-build/                 # Generic
-out/                   # Generic
-.output/               # Nuxt
-*.egg-info/            # Python
-__pypackages__/        # Python
-*.class                # Java
-*.jar                  # Java
-bin/                   # Go, Java
-*.tsbuildinfo          # TypeScript incremental build
+# Build outputs
+.next/
+**/.next/
+dist/
+build/
+out/
+.output/
+*.egg-info/
+__pypackages__/
+*.class
+*.jar
+bin/
+*.tsbuildinfo
 
-# Environment - CRITICAL: Never commit secrets!
+# Environment - NEVER commit secrets!
 .env
 .env.*
 .env.local
@@ -50,26 +50,26 @@ bin/                   # Go, Java
 .env.production
 .env.test
 
-# Database (framework-agnostic)
+# Database
 *.db
 *.sqlite
 *.sqlite3
 *.db-shm
 *.db-wal
-prisma/migrations/*/migration.sql   # Prisma (TypeScript)
-*/migrations/__pycache__/           # Django (Python)
+prisma/migrations/*/migration.sql
+*/migrations/__pycache__/
 
-# Testing (framework-agnostic)
-coverage/              # Generic
-test-results/          # Playwright test results
-**/test-results/       # Playwright in subfolders
-playwright-report/     # Playwright HTML reports
-.nyc_output/           # JavaScript
-.coverage              # Python
-htmlcov/               # Python
-*.cover                # Python
-.pytest_cache/         # Python
-tests/.auth/           # Playwright auth state (contains session tokens)
+# Testing
+coverage/
+test-results/
+**/test-results/
+playwright-report/
+.nyc_output/
+.coverage
+htmlcov/
+*.cover
+.pytest_cache/
+tests/.auth/
 
 # IDEs
 .vscode/
