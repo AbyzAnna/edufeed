@@ -108,3 +108,6 @@ secrets/
 # Misc
 .turbo
 .cache
+
+# Nested repositories (managed separately)
+edufeed-mobile/
