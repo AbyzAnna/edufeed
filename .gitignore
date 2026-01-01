@@ -9,6 +9,7 @@ plugins/                            # Plugin implementations (framework files)
 
 # Dependencies (framework-agnostic)
 node_modules/          # JavaScript/TypeScript
+**/node_modules/
 .pnpm-store/
 .yarn/
 .npm/
@@ -27,6 +28,7 @@ go.sum
 
 # Build outputs (framework-agnostic)
 .next/                 # NextJS
+**/.next/              # NextJS in subfolders
 dist/                  # Generic
 build/                 # Generic
 out/                   # Generic
@@ -38,11 +40,15 @@ __pypackages__/        # Python
 bin/                   # Go, Java
 *.tsbuildinfo          # TypeScript incremental build
 
-# Environment
+# Environment - CRITICAL: Never commit secrets!
 .env
+.env.*
 .env.local
 .env.*.local
 *.env
+.env.development
+.env.production
+.env.test
 
 # Database (framework-agnostic)
 *.db
@@ -56,12 +62,14 @@ prisma/migrations/*/migration.sql   # Prisma (TypeScript)
 # Testing (framework-agnostic)
 coverage/              # Generic
 test-results/          # Playwright test results
+**/test-results/       # Playwright in subfolders
+playwright-report/     # Playwright HTML reports
 .nyc_output/           # JavaScript
 .coverage              # Python
 htmlcov/               # Python
 *.cover                # Python
 .pytest_cache/         # Python
-test-results/          # Playwright
+tests/.auth/           # Playwright auth state (contains session tokens)
 
 # IDEs
 .vscode/
@@ -86,3 +94,17 @@ yarn-error.log*
 .temp/
 tmp/
 .vercel
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Auth tokens/secrets
+*.pem
+*.key
+*.crt
+secrets/
+
+# Misc
+.turbo
+.cache
