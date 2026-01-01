@@ -250,24 +250,35 @@ async function synthesizeSpeech(
   let audioUrl = '';
 
   // Upload to R2 if available, otherwise return base64 data URL
+  // Note: MeloTTS returns MP3 format audio
+  const MAX_BASE64_SIZE = 5 * 1024 * 1024; // 5MB limit for base64 fallback
+
   if (env.AUDIO_BUCKET && combinedAudio.byteLength > 0) {
     try {
-      const audioKey = `audio-overviews/${crypto.randomUUID()}.wav`;
+      const audioKey = `audio-overviews/${crypto.randomUUID()}.mp3`;
       await env.AUDIO_BUCKET.put(audioKey, combinedAudio, {
         httpMetadata: {
-          contentType: 'audio/wav',
+          contentType: 'audio/mpeg',
         },
       });
-      // TODO: Replace with your actual R2 public domain
+      // TODO: Replace with your actual R2 public domain or use env variable
       audioUrl = `https://audio.edufeed.com/${audioKey}`;
     } catch (r2Error) {
       console.error('R2 upload error:', r2Error);
-      // Fall back to base64
-      audioUrl = createBase64AudioUrl(combinedAudio);
+      // Fall back to base64 if audio is not too large
+      if (combinedAudio.byteLength < MAX_BASE64_SIZE) {
+        audioUrl = createBase64AudioUrl(combinedAudio);
+      } else {
+        console.error('Audio too large for base64 fallback');
+        audioUrl = '';
+      }
     }
-  } else if (combinedAudio.byteLength > 0) {
-    // R2 not enabled or no audio - return base64 data URL
+  } else if (combinedAudio.byteLength > 0 && combinedAudio.byteLength < MAX_BASE64_SIZE) {
+    // R2 not enabled - return base64 data URL if not too large
     audioUrl = createBase64AudioUrl(combinedAudio);
+  } else if (combinedAudio.byteLength >= MAX_BASE64_SIZE) {
+    console.error('Audio too large for base64, R2 not configured');
+    audioUrl = '';
   } else {
     // No audio generated - return transcript-only response
     audioUrl = '';
@@ -295,7 +306,8 @@ function createBase64AudioUrl(audioBuffer: ArrayBuffer): string {
     base64 += String.fromCharCode(...chunk);
   }
 
-  return `data:audio/wav;base64,${btoa(base64)}`;
+  // MeloTTS returns MP3 format
+  return `data:audio/mpeg;base64,${btoa(base64)}`;
 }
 
 

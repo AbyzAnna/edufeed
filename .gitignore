@@ -55,6 +55,7 @@ prisma/migrations/*/migration.sql   # Prisma (TypeScript)
 
 # Testing (framework-agnostic)
 coverage/              # Generic
+test-results/          # Playwright test results
 .nyc_output/           # JavaScript
 .coverage              # Python
 htmlcov/               # Python

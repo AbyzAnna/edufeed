@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/supabase/auth";
 import { prisma } from "@/lib/prisma";
-import { RoomMessageType } from "@prisma/client";
+import { RoomMessageType, ModerationContentType } from "@prisma/client";
+import { moderationService } from "@/lib/moderation";
+import { ContentBlockedError } from "@/lib/moderation/errors";
 
 interface RouteParams {
   params: Promise<{ roomId: string }>;
@@ -121,6 +123,43 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       "POLL",
     ];
     const messageType = validTypes.includes(type) ? type : "TEXT";
+
+    // Only moderate user-generated text messages (not system or AI)
+    const shouldModerate = ["TEXT", "QUESTION", "HIGHLIGHT"].includes(messageType);
+
+    if (shouldModerate && content) {
+      // Check if user is muted
+      const isMuted = await moderationService.isUserMuted(session.user.id);
+      if (isMuted) {
+        return NextResponse.json(
+          {
+            error: "USER_MUTED",
+            message: "Your account is temporarily muted due to repeated policy violations",
+          },
+          { status: 403 }
+        );
+      }
+
+      // Run content moderation
+      const moderationResult = await moderationService.moderate({
+        content,
+        contentType: ModerationContentType.STUDY_ROOM_MESSAGE,
+        userId: session.user.id,
+      });
+
+      // Block if content is rejected
+      if (!moderationResult.approved) {
+        const error = new ContentBlockedError(
+          moderationResult.violations,
+          moderationResult.report.id,
+          true
+        );
+        return NextResponse.json(
+          error.toResponse(),
+          { status: 403 }
+        );
+      }
+    }
 
     const message = await prisma.studyRoomMessage.create({
       data: {

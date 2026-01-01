@@ -26,11 +26,11 @@ Smart AI-powered content verification system that automatically detects policy v
 **As a** platform administrator, I want all moderation decisions stored in the database **so that** I can review moderation history, audit decisions, and improve the system.
 
 **Acceptance Criteria:**
-- [ ] **AC-US2-01**: Create `ContentModerationReport` model with violation details, confidence scores, and decision
-- [ ] **AC-US2-02**: Store original content, moderation timestamp, and AI model version
-- [ ] **AC-US2-03**: Link reports to source content (comment, message, notebook, etc.) via polymorphic relation
-- [ ] **AC-US2-04**: Track moderation status: PENDING, APPROVED, REJECTED, APPEALED, ESCALATED
-- [ ] **AC-US2-05**: Store reviewer information for manual reviews
+- [x] **AC-US2-01**: Create `ContentModerationReport` model with violation details, confidence scores, and decision
+- [x] **AC-US2-02**: Store original content, moderation timestamp, and AI model version
+- [x] **AC-US2-03**: Link reports to source content (comment, message, notebook, etc.) via polymorphic relation
+- [x] **AC-US2-04**: Track moderation status: PENDING, APPROVED, REJECTED, APPEALED, ESCALATED
+- [x] **AC-US2-05**: Store reviewer information for manual reviews
 
 ---
 
@@ -39,11 +39,11 @@ Smart AI-powered content verification system that automatically detects policy v
 **As a** developer, I want a reusable moderation service **so that** any new content type can be easily integrated with the moderation system.
 
 **Acceptance Criteria:**
-- [ ] **AC-US3-01**: Create `ContentModerationService` class with `moderate(content, type, userId)` method
-- [ ] **AC-US3-02**: Service integrates with Cloudflare Workers for low-latency AI inference
-- [ ] **AC-US3-03**: Fallback to OpenAI API if Workers unavailable
-- [ ] **AC-US3-04**: Service returns structured response: `{ approved: boolean, report: Report, violations: Violation[] }`
-- [ ] **AC-US3-05**: Configurable severity thresholds per content type
+- [x] **AC-US3-01**: Create `ContentModerationService` class with `moderate(content, type, userId)` method
+- [x] **AC-US3-02**: Service integrates with Cloudflare Workers for low-latency AI inference
+- [x] **AC-US3-03**: Fallback to OpenAI API if Workers unavailable
+- [x] **AC-US3-04**: Service returns structured response: `{ approved: boolean, report: Report, violations: Violation[] }`
+- [x] **AC-US3-05**: Configurable severity thresholds per content type
 
 ---
 
@@ -78,9 +78,9 @@ Smart AI-powered content verification system that automatically detects policy v
 **As a** developer, I want moderation integrated into all user content flows **so that** all content is checked consistently.
 
 **Acceptance Criteria:**
-- [ ] **AC-US6-01**: Integrate moderation into Comment creation API
-- [ ] **AC-US6-02**: Integrate moderation into DirectMessage sending
-- [ ] **AC-US6-03**: Integrate moderation into StudyRoomMessage posting
+- [x] **AC-US6-01**: Integrate moderation into Comment creation API
+- [x] **AC-US6-02**: Integrate moderation into DirectMessage sending
+- [x] **AC-US6-03**: Integrate moderation into StudyRoomMessage posting
 - [ ] **AC-US6-04**: Integrate moderation into Notebook/NotebookSource content
 - [ ] **AC-US6-05**: Integrate moderation into Flashcard deck creation
 

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/supabase/auth";
 import prisma from "@/lib/prisma";
+import { moderationService } from "@/lib/moderation";
+import { ModerationContentType } from "@prisma/client";
+import { ContentBlockedError } from "@/lib/moderation/errors";
 
 // GET /api/conversations/[conversationId]/messages - Get messages
 export async function GET(
@@ -167,6 +170,41 @@ export async function POST(
         { error: "Receiver not found" },
         { status: 400 }
       );
+    }
+
+    // Moderate content if text message
+    if (content && content.trim()) {
+      // Check if user is muted
+      const isMuted = await moderationService.isUserMuted(session.user.id);
+      if (isMuted) {
+        return NextResponse.json(
+          {
+            error: "USER_MUTED",
+            message: "Your account is temporarily muted due to repeated policy violations",
+          },
+          { status: 403 }
+        );
+      }
+
+      // Run content moderation (higher sensitivity for DMs)
+      const moderationResult = await moderationService.moderate({
+        content: content.trim(),
+        contentType: ModerationContentType.DIRECT_MESSAGE,
+        userId: session.user.id,
+      });
+
+      // Block if content is rejected
+      if (!moderationResult.approved) {
+        const error = new ContentBlockedError(
+          moderationResult.violations,
+          moderationResult.report.id,
+          true
+        );
+        return NextResponse.json(
+          error.toResponse(),
+          { status: 403 }
+        );
+      }
     }
 
     // Create message

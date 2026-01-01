@@ -1,0 +1,18 @@
+{
+  "id": "0002-content-moderation",
+  "title": "AI Content Moderation System",
+  "description": "Smart AI-powered content verification with database storage for moderation reports, policy violation detection, and automatic blocking of inappropriate content",
+  "status": "ready_for_review",
+  "priority": "high",
+  "createdAt": "2025-12-30T22:00:00Z",
+  "updatedAt": "2025-12-30T22:00:00Z",
+  "feature": "FS-002-content-moderation",
+  "tags": [
+    "ai",
+    "moderation",
+    "content-safety",
+    "openai",
+    "cloudflare-workers"
+  ],
+  "updated": "2025-12-31T05:43:25.000Z"
+}

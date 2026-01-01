@@ -176,10 +176,10 @@ export default function CreateNotebookModal({
                   key={e}
                   type="button"
                   onClick={() => setEmoji(e)}
-                  className={`w-10 h-10 rounded-lg text-xl flex items-center justify-center transition-all ${
+                  className={`w-10 h-10 rounded-lg text-xl flex items-center justify-center transition-all border ${
                     emoji === e
-                      ? "bg-purple-500/30 ring-2 ring-purple-500"
-                      : "bg-white/5 hover:bg-white/10"
+                      ? "bg-purple-500/30 ring-2 ring-purple-500 border-purple-500"
+                      : "bg-white/10 hover:bg-white/20 border-white/20 hover:border-white/30"
                   }`}
                 >
                   {e}
@@ -199,8 +199,10 @@ export default function CreateNotebookModal({
                   key={c}
                   type="button"
                   onClick={() => setColor(c)}
-                  className={`w-8 h-8 rounded-full transition-all ${
-                    color === c ? "ring-2 ring-white ring-offset-2 ring-offset-zinc-900" : ""
+                  className={`w-8 h-8 rounded-full transition-all shadow-md ${
+                    color === c
+                      ? "ring-2 ring-white ring-offset-2 ring-offset-zinc-900 scale-110"
+                      : "hover:scale-105 opacity-80 hover:opacity-100"
                   }`}
                   style={{ backgroundColor: c }}
                 />
@@ -231,7 +233,7 @@ export default function CreateNotebookModal({
             <Button
               variant="secondary"
               onClick={handleClose}
-              className="flex-1"
+              className="flex-1 !bg-white/15 !border !border-white/20 hover:!bg-white/25"
             >
               Cancel
             </Button>
@@ -239,7 +241,7 @@ export default function CreateNotebookModal({
               type="submit"
               variant="primary"
               loading={loading}
-              className="flex-1"
+              className="flex-1 !bg-purple-600 hover:!bg-purple-500 !shadow-lg !shadow-purple-500/25"
             >
               Create Notebook
             </Button>

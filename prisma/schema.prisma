@@ -793,6 +793,10 @@ model User {
   StudyRoom                                    StudyRoom[]
   StudyRoomParticipant                         StudyRoomParticipant[]
   Video                                        Video[]
+  // Content Moderation
+  AuthorReports                                ContentModerationReport[] @relation("AuthorReports")
+  ReviewedReports                              ContentModerationReport[] @relation("ReviewedReports")
+  ModerationHistory                            UserModerationHistory?
 }
 
 model VerificationToken {
@@ -891,6 +895,7 @@ enum NotebookOutputType {
   TIMELINE
   MIND_MAP
   AUDIO_OVERVIEW
+  VIDEO_OVERVIEW
   FLASHCARD_DECK
   QUIZ
   DATA_TABLE
@@ -977,4 +982,86 @@ enum VideoStatus {
   PROCESSING
   COMPLETED
   FAILED
+}
+
+// ==================== CONTENT MODERATION ====================
+
+enum ModerationContentType {
+  COMMENT
+  DIRECT_MESSAGE
+  STUDY_ROOM_MESSAGE
+  NOTEBOOK_CONTENT
+  NOTEBOOK_SOURCE
+  FLASHCARD
+  FEED_ITEM
+}
+
+enum ModerationStatus {
+  PENDING
+  AUTO_APPROVED
+  AUTO_REJECTED
+  MANUAL_REVIEW
+  APPROVED
+  REJECTED
+  APPEALED
+  ESCALATED
+}
+
+enum ModerationDecision {
+  APPROVED
+  REJECTED
+  WARNING_ISSUED
+  CONTENT_MODIFIED
+}
+
+enum UserModerationStatus {
+  GOOD_STANDING
+  WARNING
+  MUTED
+  UNDER_REVIEW
+  SUSPENDED
+}
+
+model ContentModerationReport {
+  id              String              @id @default(cuid())
+  contentType     ModerationContentType
+  contentId       String              // Polymorphic reference to content
+  userId          String              // Content author
+  originalContent String              // Snapshot of content at moderation time
+  status          ModerationStatus    @default(PENDING)
+  decision        ModerationDecision?
+  violations      Json                // Array of { category, confidence, details }
+  confidenceScore Float               @default(0)
+  aiModelVersion  String              // Track which model made the decision
+  reviewerId      String?             // Admin who reviewed (if manual)
+  reviewNotes     String?
+  appealReason    String?
+  appealedAt      DateTime?
+  resolvedAt      DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  user            User                @relation("AuthorReports", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer        User?               @relation("ReviewedReports", fields: [reviewerId], references: [id])
+
+  @@index([contentType, contentId])
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model UserModerationHistory {
+  id             String               @id @default(cuid())
+  userId         String               @unique
+  totalReports   Int                  @default(0)
+  approvedCount  Int                  @default(0)
+  rejectedCount  Int                  @default(0)
+  warningCount   Int                  @default(0)
+  currentStatus  UserModerationStatus @default(GOOD_STANDING)
+  lastViolation  DateTime?
+  muteExpiresAt  DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

@@ -5,6 +5,7 @@ import { generateFlashcards, generateClozeCards } from './lib/flashcards';
 import { generateAudioOverview } from './lib/audio-overview';
 import { storeDocumentEmbeddings, deleteSourceEmbeddings, generateEmbedding } from './lib/embeddings';
 import { generateDirectSummary, generateDirectFlashcards, generateDirectTable } from './lib/direct-content';
+import { moderateContent } from './lib/moderation';
 
 /**
  * Main Cloudflare Workers entry point
@@ -102,6 +103,10 @@ export default {
         // Universal generate endpoint for notebook outputs
         case path === '/api/generate' && request.method === 'POST':
           return handleGenerate(request, env, corsHeaders);
+
+        // Content moderation endpoint
+        case path === '/moderation' && request.method === 'POST':
+          return handleModeration(request, env, corsHeaders);
 
         default:
           return jsonResponse({ error: 'Not found' }, 404, corsHeaders);
@@ -419,8 +424,304 @@ Generate key moments for ${targetDuration}-second clips.`;
 // ==================== YouTube Transcript Handler ====================
 
 /**
+ * YouTube Innertube API client configuration
+ * This uses YouTube's internal API which is more reliable than the deprecated timedtext API
+ */
+const YOUTUBE_INNERTUBE_CONFIG = {
+  client: {
+    clientName: 'WEB',
+    clientVersion: '2.20240101.00.00',
+  },
+  apiKey: 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', // Public YouTube innertube API key
+};
+
+/**
+ * Extract transcript using YouTube's innertube API
+ * This uses the same approach as the youtube-transcript npm package
+ */
+async function extractYouTubeTranscript(videoId: string): Promise<{
+  transcript: string;
+  title: string;
+  channelName: string;
+  duration?: number;
+  hasTranscript: boolean;
+}> {
+  let title = 'Unknown Title';
+  let channelName = 'Unknown';
+  let duration: number | undefined;
+  let transcript = '';
+
+  // Step 1: Get video metadata via oEmbed (fast, reliable)
+  try {
+    const oEmbedResponse = await fetch(
+      `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
+    );
+    if (oEmbedResponse.ok) {
+      const oEmbed = await oEmbedResponse.json() as { title?: string; author_name?: string };
+      title = oEmbed.title || title;
+      channelName = oEmbed.author_name || channelName;
+    }
+  } catch {
+    // Continue without oEmbed
+  }
+
+  // Step 2: Fetch the video page to get ytInitialPlayerResponse
+  try {
+    const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const pageResponse = await fetch(watchUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Dest': 'document',
+      },
+    });
+
+    const html = await pageResponse.text();
+
+    // Extract title if not found via oEmbed
+    if (title === 'Unknown Title') {
+      const titleMatch = html.match(/"title":\s*"([^"]+)"/);
+      if (titleMatch) {
+        try {
+          title = JSON.parse(`"${titleMatch[1]}"`);
+        } catch {
+          title = titleMatch[1];
+        }
+      }
+    }
+
+    // Extract duration
+    const durationMatch = html.match(/"lengthSeconds":\s*"(\d+)"/);
+    if (durationMatch) {
+      duration = parseInt(durationMatch[1]);
+    }
+
+    // Extract channel name
+    if (channelName === 'Unknown') {
+      const channelMatch = html.match(/"ownerChannelName":\s*"([^"]+)"/);
+      if (channelMatch) {
+        try {
+          channelName = JSON.parse(`"${channelMatch[1]}"`);
+        } catch {
+          channelName = channelMatch[1];
+        }
+      }
+    }
+
+    // Method 1: Extract captionTracks from ytInitialPlayerResponse
+    // Look for the full captionTracks array
+    const captionTracksMatch = html.match(/"captionTracks":\s*(\[.*?\])(?=\s*,\s*")/s);
+
+    if (captionTracksMatch) {
+      try {
+        // Clean and parse the JSON
+        let tracksJson = captionTracksMatch[1]
+          .replace(/\\x([0-9A-Fa-f]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+          .replace(/\\u0026/g, '&')
+          .replace(/\\u003d/g, '=');
+
+        const tracks = JSON.parse(tracksJson) as Array<{
+          baseUrl: string;
+          languageCode: string;
+          kind?: string;
+          vssId?: string;
+        }>;
+
+        // Prefer English auto-generated, then English, then any
+        const engAsr = tracks.find(t => t.vssId?.includes('.en') || (t.languageCode === 'en' && t.kind === 'asr'));
+        const engManual = tracks.find(t => t.languageCode === 'en' && t.kind !== 'asr');
+        const anyEng = tracks.find(t => t.languageCode?.startsWith('en'));
+        const track = engAsr || engManual || anyEng || tracks[0];
+
+        if (track?.baseUrl) {
+          // Decode the URL properly
+          let captionUrl = track.baseUrl
+            .replace(/\\u0026/g, '&')
+            .replace(/\\u003d/g, '=')
+            .replace(/\\u002f/g, '/');
+
+          // Request JSON format for easier parsing
+          if (!captionUrl.includes('fmt=')) {
+            captionUrl += '&fmt=json3';
+          }
+
+          const captionResponse = await fetch(captionUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+              'Accept': '*/*',
+            },
+          });
+
+          if (captionResponse.ok) {
+            const captionText = await captionResponse.text();
+
+            if (captionText.trim().startsWith('{')) {
+              const captionData = JSON.parse(captionText) as {
+                events?: Array<{
+                  segs?: Array<{ utf8?: string }>;
+                  tStartMs?: number;
+                  dDurationMs?: number;
+                }>;
+              };
+
+              if (captionData.events && captionData.events.length > 0) {
+                const parts: string[] = [];
+
+                for (const event of captionData.events) {
+                  if (event.segs) {
+                    for (const seg of event.segs) {
+                      const text = seg.utf8;
+                      if (text && text.trim() && text !== '\n') {
+                        parts.push(text.replace(/\n/g, ' ').trim());
+                      }
+                    }
+                  }
+                }
+
+                transcript = parts.join(' ').replace(/\s+/g, ' ').trim();
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Caption track parsing error:', err);
+      }
+    }
+
+    // Method 2: Try using YouTube's get_transcript endpoint (innertube)
+    if (!transcript) {
+      try {
+        // First get the transcript params from the page
+        const paramsMatch = html.match(/"serializedShareEntity":"([^"]+)"/);
+        const continuationMatch = html.match(/"continuation":"([^"]+)"/);
+
+        // Use innertube player API to get caption info
+        const innertubeResponse = await fetch(
+          'https://www.youtube.com/youtubei/v1/player?key=' + YOUTUBE_INNERTUBE_CONFIG.apiKey + '&prettyPrint=false',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+              'Origin': 'https://www.youtube.com',
+              'Referer': `https://www.youtube.com/watch?v=${videoId}`,
+            },
+            body: JSON.stringify({
+              context: {
+                client: {
+                  clientName: 'WEB',
+                  clientVersion: '2.20240101.00.00',
+                  hl: 'en',
+                  gl: 'US',
+                },
+              },
+              videoId,
+              playbackContext: {
+                contentPlaybackContext: {
+                  signatureTimestamp: 19950,
+                },
+              },
+            }),
+          }
+        );
+
+        if (innertubeResponse.ok) {
+          const playerData = await innertubeResponse.json() as {
+            captions?: {
+              playerCaptionsTracklistRenderer?: {
+                captionTracks?: Array<{
+                  baseUrl: string;
+                  languageCode: string;
+                  kind?: string;
+                }>;
+              };
+            };
+            videoDetails?: {
+              title?: string;
+              author?: string;
+              lengthSeconds?: string;
+            };
+          };
+
+          // Update metadata
+          if (playerData.videoDetails) {
+            if (title === 'Unknown Title' && playerData.videoDetails.title) {
+              title = playerData.videoDetails.title;
+            }
+            if (channelName === 'Unknown' && playerData.videoDetails.author) {
+              channelName = playerData.videoDetails.author;
+            }
+            if (!duration && playerData.videoDetails.lengthSeconds) {
+              duration = parseInt(playerData.videoDetails.lengthSeconds);
+            }
+          }
+
+          const captionTracks = playerData.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+          if (captionTracks && captionTracks.length > 0) {
+            const engTrack = captionTracks.find(t =>
+              t.languageCode === 'en' || t.languageCode?.startsWith('en')
+            ) || captionTracks[0];
+
+            if (engTrack?.baseUrl) {
+              let captionUrl = engTrack.baseUrl;
+              if (!captionUrl.includes('fmt=')) {
+                captionUrl += '&fmt=json3';
+              }
+
+              const captionResponse = await fetch(captionUrl, {
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+                },
+              });
+
+              if (captionResponse.ok) {
+                const captionText = await captionResponse.text();
+                if (captionText.trim().startsWith('{')) {
+                  const captionData = JSON.parse(captionText) as {
+                    events?: Array<{ segs?: Array<{ utf8?: string }> }>;
+                  };
+
+                  if (captionData.events) {
+                    const parts: string[] = [];
+                    for (const event of captionData.events) {
+                      if (event.segs) {
+                        for (const seg of event.segs) {
+                          if (seg.utf8?.trim() && seg.utf8 !== '\n') {
+                            parts.push(seg.utf8.replace(/\n/g, ' ').trim());
+                          }
+                        }
+                      }
+                    }
+                    transcript = parts.join(' ').replace(/\s+/g, ' ').trim();
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Innertube API error:', err);
+      }
+    }
+  } catch (err) {
+    console.error('Video page fetch error:', err);
+  }
+
+  return {
+    transcript,
+    title,
+    channelName,
+    duration,
+    hasTranscript: transcript.length > 0,
+  };
+}
+
+/**
  * Handle YouTube transcript extraction
- * Uses YouTube's timedtext API with proper URL handling
+ * Uses YouTube's innertube API for reliable transcript extraction
  */
 async function handleYouTubeTranscript(
   request: Request,
@@ -434,152 +735,18 @@ async function handleYouTubeTranscript(
       return jsonResponse({ error: 'Missing videoId' }, 400, corsHeaders);
     }
 
-    // Get video metadata via oEmbed first
-    let title = 'Unknown Title';
-    let channelName = 'Unknown';
+    // Extract transcript using innertube API
+    const result = await extractYouTubeTranscript(videoId);
+    let { transcript, title, channelName, duration, hasTranscript } = result;
 
-    try {
-      const oEmbedResponse = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
-      if (oEmbedResponse.ok) {
-        const oEmbed = await oEmbedResponse.json() as { title?: string; author_name?: string };
-        title = oEmbed.title || title;
-        channelName = oEmbed.author_name || channelName;
-      }
-    } catch {
-      // Ignore oEmbed errors
-    }
-
-    // Try to get captions via timedtext API directly
-    // This is YouTube's public API for captions
-    const languages = ['en', 'en-US', 'en-GB', 'a.en']; // Try different English variants
-    let transcript = '';
-    let duration: number | undefined;
-
-    for (const lang of languages) {
-      try {
-        // Try auto-generated captions format
-        const timedtextUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${lang}&fmt=json3`;
-        const response = await fetch(timedtextUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          },
-        });
-
-        if (response.ok) {
-          const text = await response.text();
-          if (text && text.trim().startsWith('{')) {
-            const data = JSON.parse(text) as { events?: Array<{ segs?: Array<{ utf8?: string }>; dDurationMs?: number }> };
-            if (data.events && data.events.length > 0) {
-              const parts: string[] = [];
-              let totalDuration = 0;
-
-              for (const event of data.events) {
-                if (event.dDurationMs) {
-                  totalDuration = Math.max(totalDuration, event.dDurationMs);
-                }
-                if (event.segs) {
-                  for (const seg of event.segs) {
-                    if (seg.utf8 && seg.utf8.trim() && seg.utf8.trim() !== '\n') {
-                      parts.push(seg.utf8.replace(/\n/g, ' ').trim());
-                    }
-                  }
-                }
-              }
-
-              transcript = parts.join(' ').replace(/\s+/g, ' ').trim();
-              duration = Math.floor(totalDuration / 1000);
-              break;
-            }
-          }
-        }
-      } catch {
-        // Try next language
-      }
-    }
-
-    // If no transcript found via API, try scraping the page
-    if (!transcript) {
-      try {
-        const videoPageResponse = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9',
-          },
-        });
-
-        const html = await videoPageResponse.text();
-
-        // Extract title from page if not already set
-        if (title === 'Unknown Title') {
-          const titleMatch = html.match(/<title>([^<]+)<\/title>/);
-          if (titleMatch) {
-            title = titleMatch[1].replace(' - YouTube', '').trim();
-          }
-        }
-
-        // Extract duration
-        if (!duration) {
-          const durationMatch = html.match(/"lengthSeconds":"(\d+)"/);
-          if (durationMatch) {
-            duration = parseInt(durationMatch[1]);
-          }
-        }
-
-        // Try to find caption tracks in the page
-        const captionMatch = html.match(/"captionTracks":\s*(\[[\s\S]*?\])/);
-
-        if (captionMatch) {
-          try {
-            const tracks = JSON.parse(captionMatch[1].replace(/\\"/g, '"')) as Array<{ baseUrl: string; languageCode: string }>;
-            const engTrack = tracks.find(t => t.languageCode === 'en' || t.languageCode.startsWith('en')) || tracks[0];
-
-            if (engTrack && engTrack.baseUrl) {
-              let captionUrl = engTrack.baseUrl
-                .replace(/\\u0026/g, '&')
-                .replace(/\\u003d/g, '=');
-
-              if (!captionUrl.includes('fmt=')) {
-                captionUrl += '&fmt=json3';
-              }
-
-              const captionRes = await fetch(captionUrl);
-              if (captionRes.ok) {
-                const captionText = await captionRes.text();
-                const captionData = JSON.parse(captionText) as { events?: Array<{ segs?: Array<{ utf8?: string }> }> };
-
-                if (captionData.events) {
-                  const parts: string[] = [];
-                  for (const event of captionData.events) {
-                    if (event.segs) {
-                      for (const seg of event.segs) {
-                        if (seg.utf8 && seg.utf8.trim() && seg.utf8 !== '\n') {
-                          parts.push(seg.utf8.replace(/\n/g, ' ').trim());
-                        }
-                      }
-                    }
-                  }
-                  transcript = parts.join(' ').replace(/\s+/g, ' ').trim();
-                }
-              }
-            }
-          } catch {
-            // Parsing failed
-          }
-        }
-      } catch {
-        // Page scraping failed
-      }
-    }
-
-    // If still no transcript, use AI to generate a summary from title/description
-    if (!transcript) {
-      // Try to generate content summary using AI
-      const aiPrompt = `Video Title: "${title}" by ${channelName}. This is a YouTube video. Since the transcript is not available, please provide a brief summary of what this video might be about based on the title, and note that the full transcript was not available.`;
+    // If no transcript found, use AI to generate a summary
+    if (!hasTranscript) {
+      const aiPrompt = `Video Title: "${title}" by ${channelName}. This is a YouTube video. Since the transcript is not available, please provide a brief educational summary of what this video might be about based on the title. Keep it concise and informative.`;
 
       try {
         const aiResponse = await env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
           messages: [
-            { role: 'system', content: 'You are a helpful assistant. Generate a brief educational summary based on video metadata.' },
+            { role: 'system', content: 'You are an educational assistant. Generate a brief, informative summary based on video metadata. Be concise and focus on educational value.' },
             { role: 'user', content: aiPrompt },
           ],
           temperature: 0.7,
@@ -588,17 +755,8 @@ async function handleYouTubeTranscript(
 
         transcript = `[Note: Auto-generated captions not available for this video]\n\n${aiResponse.response || ''}\n\nOriginal video: ${title} by ${channelName}`;
       } catch {
-        transcript = `[Video: ${title} by ${channelName}]\n\nTranscript not available. This video does not have auto-generated captions enabled. Please try a different video or add the content manually.`;
+        transcript = `[Video: ${title} by ${channelName}]\n\nTranscript not available. This video may not have captions enabled. You can still use the video for learning - try watching it directly or adding notes manually.`;
       }
-
-      return jsonResponse({
-        transcript,
-        title,
-        duration,
-        channelName,
-        hasTranscript: false,
-        wordCount: transcript.split(/\s+/).length,
-      }, 200, corsHeaders);
     }
 
     return jsonResponse({
@@ -606,8 +764,8 @@ async function handleYouTubeTranscript(
       title,
       duration,
       channelName,
-      hasTranscript: true,
-      wordCount: transcript.split(/\s+/).length,
+      hasTranscript,
+      wordCount: transcript.split(/\s+/).filter(Boolean).length,
     }, 200, corsHeaders);
   } catch (error) {
     console.error('YouTube transcript error:', error);
@@ -951,42 +1109,60 @@ CRITICAL: You MUST respond with ONLY valid JSON. No markdown formatting, no code
     // Try to extract JSON from response
     let content: Record<string, unknown> = {};
 
-    try {
-      // Try direct parse first
-      content = JSON.parse(responseText);
-    } catch {
-      // Try to extract JSON from markdown code block
-      const codeBlockMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (codeBlockMatch) {
-        try {
-          content = JSON.parse(codeBlockMatch[1].trim());
-        } catch {
-          // Try to find any JSON object or array
-          const jsonMatch = responseText.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-          if (jsonMatch) {
-            try {
-              content = JSON.parse(jsonMatch[1]);
-            } catch {
-              // Return raw text if all parsing fails
-              content = { raw: responseText, parseError: true };
-            }
-          } else {
-            content = { raw: responseText, parseError: true };
-          }
-        }
-      } else {
-        // Try to find any JSON object or array
-        const jsonMatch = responseText.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-        if (jsonMatch) {
-          try {
-            content = JSON.parse(jsonMatch[1]);
-          } catch {
-            content = { raw: responseText, parseError: true };
-          }
-        } else {
-          content = { raw: responseText, parseError: true };
-        }
+    // Helper function to try parsing JSON
+    const tryParseJSON = (text: string): Record<string, unknown> | null => {
+      try {
+        return JSON.parse(text);
+      } catch {
+        return null;
       }
+    };
+
+    // Helper function to extract and parse JSON from text
+    const extractJSON = (text: string | unknown): Record<string, unknown> | null => {
+      // Handle non-string input
+      if (typeof text !== 'string') {
+        if (typeof text === 'object' && text !== null) {
+          return text as Record<string, unknown>;
+        }
+        return null;
+      }
+
+      // Try direct parse first
+      const direct = tryParseJSON(text);
+      if (direct) return direct;
+
+      // Clean the text - remove any leading/trailing whitespace and markdown
+      const cleaned = text.trim()
+        .replace(/^```(?:json)?\s*/g, '')
+        .replace(/\s*```$/g, '');
+
+      const cleanedDirect = tryParseJSON(cleaned);
+      if (cleanedDirect) return cleanedDirect;
+
+      // Try to find JSON object in the text
+      const jsonObjectMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonObjectMatch) {
+        const parsed = tryParseJSON(jsonObjectMatch[0]);
+        if (parsed) return parsed;
+      }
+
+      // Try to find JSON array
+      const jsonArrayMatch = text.match(/\[[\s\S]*\]/);
+      if (jsonArrayMatch) {
+        const parsed = tryParseJSON(jsonArrayMatch[0]);
+        if (parsed) return parsed;
+      }
+
+      return null;
+    };
+
+    const parsed = extractJSON(responseText);
+    if (parsed) {
+      content = parsed;
+    } else {
+      // Return raw text if all parsing fails
+      content = { raw: responseText, parseError: true };
     }
 
     // For AUDIO_OVERVIEW, we need to also generate the audio
@@ -1032,6 +1208,54 @@ CRITICAL: You MUST respond with ONLY valid JSON. No markdown formatting, no code
       error: 'Generation failed',
       message: error instanceof Error ? error.message : 'Unknown error',
     }, 500, corsHeaders);
+  }
+}
+
+// ==================== Moderation ====================
+
+/**
+ * Handle content moderation request
+ */
+async function handleModeration(
+  request: Request,
+  env: Env,
+  corsHeaders: Record<string, string>
+): Promise<Response> {
+  try {
+    const { content } = await request.json() as { content?: string };
+
+    if (!content || typeof content !== 'string') {
+      return jsonResponse(
+        { success: false, error: 'Missing or invalid content field' },
+        400,
+        corsHeaders
+      );
+    }
+
+    // Limit content length
+    const truncatedContent = content.slice(0, 5000);
+
+    // Run moderation
+    const result = await moderateContent(truncatedContent, env);
+
+    return jsonResponse(
+      {
+        success: true,
+        result,
+      },
+      200,
+      corsHeaders
+    );
+  } catch (error) {
+    console.error('Moderation error:', error);
+    return jsonResponse(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Moderation failed',
+      },
+      500,
+      corsHeaders
+    );
   }
 }
 

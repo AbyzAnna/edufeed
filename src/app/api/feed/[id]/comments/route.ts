@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/supabase/auth";
 import prisma from "@/lib/prisma";
+import { moderationService } from "@/lib/moderation";
+import { ModerationContentType } from "@prisma/client";
+import { ContentBlockedError } from "@/lib/moderation/errors";
 
 // GET /api/feed/[id]/comments - Get comments for a feed item
 export async function GET(
@@ -151,6 +154,38 @@ export async function POST(
           { status: 404 }
         );
       }
+    }
+
+    // Check if user is muted
+    const isMuted = await moderationService.isUserMuted(session.user.id);
+    if (isMuted) {
+      return NextResponse.json(
+        {
+          error: "USER_MUTED",
+          message: "Your account is temporarily muted due to repeated policy violations",
+        },
+        { status: 403 }
+      );
+    }
+
+    // Run content moderation
+    const moderationResult = await moderationService.moderate({
+      content: content.trim(),
+      contentType: ModerationContentType.COMMENT,
+      userId: session.user.id,
+    });
+
+    // Block if content is rejected
+    if (!moderationResult.approved) {
+      const error = new ContentBlockedError(
+        moderationResult.violations,
+        moderationResult.report.id,
+        true
+      );
+      return NextResponse.json(
+        error.toResponse(),
+        { status: 403 }
+      );
     }
 
     const comment = await prisma.comment.create({

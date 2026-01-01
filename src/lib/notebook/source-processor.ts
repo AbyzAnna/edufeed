@@ -139,23 +139,32 @@ async function processUrl(url: string): Promise<ProcessResult> {
 // Process PDF
 async function processPdf(fileUrl: string): Promise<ProcessResult> {
   try {
-    const response = await fetch(fileUrl);
-    const buffer = await response.arrayBuffer();
+    // Use pdf-parse v2 API
+    const { PDFParse } = await import("pdf-parse");
 
-    // Use pdf-parse (assuming it's installed)
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfParse = require("pdf-parse");
-    const pdf = await pdfParse(Buffer.from(buffer));
+    const parser = new PDFParse({ url: fileUrl });
+    const result = await parser.getText();
 
-    const content = pdf.text.replace(/\s+/g, " ").trim();
+    const content = result.text.replace(/\s+/g, " ").trim();
     const wordCount = content.split(/\s+/).length;
+
+    // Get document info
+    let info = {};
+    let numPages = 0;
+    try {
+      const infoResult = await parser.getInfo();
+      info = infoResult.info || {};
+      numPages = infoResult.total || 0;
+    } catch {
+      // Info extraction failed, continue with text only
+    }
 
     return {
       content,
       wordCount,
       metadata: {
-        pages: pdf.numpages,
-        info: pdf.info,
+        pages: numPages,
+        info,
       },
     };
   } catch (error) {
