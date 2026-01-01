@@ -1007,16 +1007,46 @@ const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TO
 
 ---
 
+## GitHub Configuration
+
+### GitHub Personal Access Token
+- **Token:** Stored in `.env` as `GITHUB_TOKEN`
+- **Scopes:** repo, workflow (for CI/CD operations)
+
+### GitHub Usage
+```bash
+# Use for GitHub API calls
+curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user
+
+# Use with gh CLI
+export GH_TOKEN=$(grep GITHUB_TOKEN .env | cut -d'"' -f2)
+gh repo list
+```
+
+### When to Use GITHUB_TOKEN
+- Creating/managing GitHub issues via API
+- GitHub Actions workflows
+- Repository operations (clone private repos, push)
+- SpecWeave GitHub sync (`/sw-github:sync`)
+
+---
+
 ## Database Operations
 
 **IMPORTANT:** Claude MUST execute all database operations with Supabase directly. Do not ask the user to run migrations manually - execute them yourself using the Prisma CLI.
 
 ### Session Startup Checklist
 At the start of each session, Claude should:
-1. Read `.env` file to load Supabase credentials
+1. **Read `.env` file FIRST** to load ALL credentials (Supabase, GitHub, SendGrid, etc.)
 2. Verify database connection is configured
 3. Run `npx prisma generate` if Prisma client needs updating
 4. Run `npx prisma db push` or migrations as needed
+
+**CRITICAL: Always check `.env` for secrets before any external operation!**
+```bash
+# Quick check for available tokens
+grep -E "^[A-Z_]+=" .env | cut -d= -f1
+```
 
 ### Supabase Database Configuration
 - All database credentials are stored in `.env` file
