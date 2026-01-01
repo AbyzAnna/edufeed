@@ -12,8 +12,9 @@ import { test, expect, Page } from '@playwright/test';
  * - Unauthenticated state
  */
 
-// Helper to mock authenticated user
+// Helper to mock authenticated user with full Supabase auth
 async function mockAuthenticatedUser(page: Page) {
+  // Mock user stats API
   await page.route('**/api/user/stats', async (route) => {
     await route.fulfill({
       status: 200,
@@ -22,6 +23,65 @@ async function mockAuthenticatedUser(page: Page) {
         sourcesCount: 12,
         videosCount: 25,
         completedVideos: 18,
+      }),
+    });
+  });
+
+  // Mock Supabase auth API - getSession
+  await page.route('**/auth/v1/token?grant_type=refresh_token', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        access_token: 'mock-access-token',
+        token_type: 'bearer',
+        expires_in: 3600,
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        refresh_token: 'mock-refresh-token',
+        user: {
+          id: 'test-user-123',
+          aud: 'authenticated',
+          role: 'authenticated',
+          email: 'test@example.com',
+          email_confirmed_at: '2024-01-01T00:00:00.000Z',
+          phone: '',
+          confirmed_at: '2024-01-01T00:00:00.000Z',
+          last_sign_in_at: '2024-01-01T00:00:00.000Z',
+          app_metadata: { provider: 'email', providers: ['email'] },
+          user_metadata: {
+            full_name: 'Test User',
+            avatar_url: null,
+          },
+          identities: [],
+          created_at: '2024-01-01T00:00:00.000Z',
+          updated_at: '2024-01-01T00:00:00.000Z',
+        },
+      }),
+    });
+  });
+
+  // Mock Supabase user endpoint
+  await page.route('**/auth/v1/user', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'test-user-123',
+        aud: 'authenticated',
+        role: 'authenticated',
+        email: 'test@example.com',
+        email_confirmed_at: '2024-01-01T00:00:00.000Z',
+        phone: '',
+        confirmed_at: '2024-01-01T00:00:00.000Z',
+        last_sign_in_at: '2024-01-01T00:00:00.000Z',
+        app_metadata: { provider: 'email', providers: ['email'] },
+        user_metadata: {
+          full_name: 'Test User',
+          avatar_url: null,
+        },
+        identities: [],
+        created_at: '2024-01-01T00:00:00.000Z',
+        updated_at: '2024-01-01T00:00:00.000Z',
       }),
     });
   });
