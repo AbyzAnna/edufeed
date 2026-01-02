@@ -2,12 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/supabase/auth";
 import { prisma } from "@/lib/prisma";
 import { OllamaClient } from "@/lib/ollama";
+import OpenAI from "openai";
 import {
   getNotebookContext,
   formatContextForLLM,
   extractCitations,
 } from "@/lib/notebook";
 import type { OllamaMessage } from "@/lib/ollama";
+
+// Initialize OpenAI client (if API key is available and not placeholder)
+const openai = process.env.OPENAI_API_KEY &&
+  !process.env.OPENAI_API_KEY.includes("your-") &&
+  process.env.OPENAI_API_KEY.startsWith("sk-")
+    ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+    : null;
 
 interface RouteParams {
   params: Promise<{ notebookId: string }>;
@@ -200,25 +208,91 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       const workersUrl = process.env.WORKERS_URL;
       if (workersUrl) {
         try {
-          const response = await fetch(`${workersUrl}/api/chat`, {
+          // Use the /api/generate endpoint which accepts context directly
+          const chatPrompt = `You are a helpful AI assistant that answers questions based on the user's notebook sources.
+Answer the following question based on the provided notebook content.
+Always be accurate and cite specific information from the sources when possible.
+If the information isn't available in the sources, say so clearly.
+
+User question: ${message}`;
+
+          const response = await fetch(`${workersUrl}/api/generate`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              message,
+              prompt: chatPrompt,
               context: contextText,
-              notebookId,
-              systemPrompt,
+              outputType: "CHAT_RESPONSE",
             }),
           });
 
           if (response.ok) {
             const data = await response.json();
-            aiResponse = data.response || data.message;
-            aiProvider = "workers";
+            // The generate endpoint returns { content: { ... } }
+            if (data.content) {
+              // Extract the response text from the content
+              if (typeof data.content === "string") {
+                aiResponse = data.content;
+              } else if (data.content.response) {
+                aiResponse = data.content.response;
+              } else if (data.content.message) {
+                aiResponse = data.content.message;
+              } else if (data.content.answer) {
+                aiResponse = data.content.answer;
+              } else if (data.content.text) {
+                aiResponse = data.content.text;
+              } else if (data.content.raw) {
+                aiResponse = data.content.raw;
+              } else {
+                // Try to get any string value from the content
+                const values = Object.values(data.content);
+                const stringValue = values.find(v => typeof v === "string" && (v as string).length > 10);
+                if (stringValue) {
+                  aiResponse = stringValue as string;
+                }
+              }
+              if (aiResponse) {
+                aiProvider = "workers";
+              }
+            }
           }
         } catch (workersError) {
           console.error("Workers error:", workersError);
         }
+      }
+    }
+
+    // Fallback to OpenAI if Workers unavailable
+    if (!aiResponse && openai) {
+      try {
+        const openaiMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+          { role: "system", content: systemPrompt },
+          { role: "system", content: `\n\nNOTEBOOK CONTENT:\n\n${contextText}` },
+        ];
+
+        // Add conversation history
+        for (const msg of conversationHistory) {
+          openaiMessages.push({
+            role: msg.role === "user" ? "user" : "assistant",
+            content: msg.content,
+          });
+        }
+
+        openaiMessages.push({ role: "user", content: message });
+
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: openaiMessages,
+          temperature: 0.7,
+          max_tokens: 2048,
+        });
+
+        aiResponse = completion.choices[0]?.message?.content || "";
+        if (aiResponse) {
+          aiProvider = "openai";
+        }
+      } catch (openaiError) {
+        console.error("OpenAI error:", openaiError);
       }
     }
 
@@ -233,7 +307,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         .join(", ")}
 ${notebookContext.stats.hasOutputs ? "- Generated outputs available (summaries, flashcards, etc.)" : ""}
 
-Please try again in a moment, or check that Ollama is running locally.`;
+Please try again in a moment. You can:
+1. Check if the server is running properly
+2. Verify your OpenAI API key is configured
+3. Try running Ollama locally for faster responses`;
       aiProvider = "fallback";
     }
 
