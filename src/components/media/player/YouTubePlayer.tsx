@@ -48,43 +48,8 @@ interface YouTubePlayerProps {
 
 const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
-// YouTube Player API types
-declare global {
-  interface Window {
-    YT: {
-      Player: new (
-        elementId: string,
-        config: {
-          videoId: string;
-          playerVars?: Record<string, number | string>;
-          events?: Record<string, (event: { data: number; target: YouTubePlayer }) => void>;
-        }
-      ) => YouTubePlayer;
-      PlayerState: {
-        PLAYING: number;
-        PAUSED: number;
-        ENDED: number;
-      };
-    };
-    onYouTubeIframeAPIReady?: () => void;
-  }
-}
-
-interface YouTubePlayer {
-  playVideo: () => void;
-  pauseVideo: () => void;
-  seekTo: (seconds: number, allowSeekAhead?: boolean) => void;
-  getCurrentTime: () => number;
-  getDuration: () => number;
-  setVolume: (volume: number) => void;
-  getVolume: () => number;
-  mute: () => void;
-  unMute: () => void;
-  isMuted: () => boolean;
-  setPlaybackRate: (rate: number) => void;
-  getPlaybackRate: () => number;
-  destroy: () => void;
-}
+// Import shared YouTube types
+import type { YTPlayer } from "@/types/youtube";
 
 export default function YouTubePlayer({
   videoId,
@@ -97,7 +62,7 @@ export default function YouTubePlayer({
   onAddNote,
   onTimeUpdate,
 }: YouTubePlayerProps) {
-  const playerRef = useRef<YouTubePlayer | null>(null);
+  const playerRef = useRef<YTPlayer | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const timeUpdateInterval = useRef<ReturnType<typeof setInterval> | null>(null);

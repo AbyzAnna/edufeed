@@ -21,6 +21,10 @@ import {
   Heart,
   Shuffle,
   ListMusic,
+  Volume2,
+  VolumeX,
+  ExternalLink,
+  X,
 } from "lucide-react";
 
 // Curated video collections - relaxing & learning focused
