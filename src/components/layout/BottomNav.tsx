@@ -9,13 +9,12 @@ interface NavItem {
   href: string;
   icon: LucideIcon;
   label: string;
-  isSpecial?: boolean;
   hasBadge?: boolean;
 }
 
 const navItems: NavItem[] = [
   { href: "/notebooks", icon: BookOpen, label: "Notebooks" },
-  { href: "/study", icon: Users, label: "Study", isSpecial: true },
+  { href: "/study", icon: Users, label: "Study" },
   { href: "/library", icon: Layers, label: "Library" },
   { href: "/messages", icon: MessageCircle, label: "Messages", hasBadge: true },
   { href: "/profile", icon: User, label: "Profile" },
@@ -49,22 +48,8 @@ export default function BottomNav() {
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-black/90 backdrop-blur-lg border-t border-white/10 safe-area-pb">
       <div className="flex items-center justify-around h-16 max-w-lg mx-auto">
         {navItems.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive = pathname === item.href || pathname?.startsWith(item.href + "/");
           const Icon = item.icon;
-
-          if (item.isSpecial) {
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="flex flex-col items-center justify-center w-16 h-full"
-              >
-                <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/30">
-                  <Icon className="w-5 h-5 text-white" />
-                </div>
-              </Link>
-            );
-          }
 
           return (
             <Link

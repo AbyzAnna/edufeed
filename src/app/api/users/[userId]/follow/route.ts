@@ -50,27 +50,29 @@ export async function POST(
       });
       return NextResponse.json({ following: false });
     } else {
-      // Follow
-      await prisma.follow.create({
-        data: {
-          id: crypto.randomUUID(),
-          followerId: session.user.id,
-          followingId,
-        },
-      });
+      // Follow - use transaction to ensure atomicity of follow + notification
+      await prisma.$transaction(async (tx) => {
+        await tx.follow.create({
+          data: {
+            id: crypto.randomUUID(),
+            followerId: session.user.id,
+            followingId,
+          },
+        });
 
-      // Create notification
-      await prisma.notification.create({
-        data: {
-          id: crypto.randomUUID(),
-          userId: followingId,
-          type: "FOLLOW",
-          title: "New follower",
-          message: `${session.user.name || "Someone"} started following you`,
-          actorId: session.user.id,
-          targetId: session.user.id,
-          targetType: "user",
-        },
+        // Create notification
+        await tx.notification.create({
+          data: {
+            id: crypto.randomUUID(),
+            userId: followingId,
+            type: "FOLLOW",
+            title: "New follower",
+            message: `${session.user.name || "Someone"} started following you`,
+            actorId: session.user.id,
+            targetId: session.user.id,
+            targetType: "user",
+          },
+        });
       });
 
       return NextResponse.json({ following: true });

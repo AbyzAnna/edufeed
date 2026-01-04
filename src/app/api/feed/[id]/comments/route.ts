@@ -14,7 +14,8 @@ export async function GET(
     const { id: feedItemId } = await params;
     const { searchParams } = new URL(request.url);
     const cursor = searchParams.get("cursor");
-    const limit = parseInt(searchParams.get("limit") || "20");
+    const limitParam = parseInt(searchParams.get("limit") || "20", 10);
+    const limit = isNaN(limitParam) ? 20 : Math.min(Math.max(1, limitParam), 100);
 
     const comments = await prisma.comment.findMany({
       where: {
@@ -188,42 +189,47 @@ export async function POST(
       );
     }
 
-    const comment = await prisma.comment.create({
-      data: {
-        id: crypto.randomUUID(),
-        content: content.trim(),
-        userId: session.user.id,
-        feedItemId,
-        parentId: parentId || null,
-        updatedAt: new Date(),
-      },
-      include: {
-        User: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
-            username: true,
-          },
-        },
-      },
-    });
-
-    // Create notification for feed item owner (if not self-commenting)
-    if (feedItem.userId !== session.user.id) {
-      await prisma.notification.create({
+    // Use transaction to ensure atomicity of comment + notification
+    const comment = await prisma.$transaction(async (tx) => {
+      const newComment = await tx.comment.create({
         data: {
           id: crypto.randomUUID(),
-          userId: feedItem.userId,
-          type: "COMMENT",
-          title: "New comment",
-          message: `${session.user.name || "Someone"} commented on your post`,
-          actorId: session.user.id,
-          targetId: feedItemId,
-          targetType: "feedItem",
+          content: content.trim(),
+          userId: session.user.id,
+          feedItemId,
+          parentId: parentId || null,
+          updatedAt: new Date(),
+        },
+        include: {
+          User: {
+            select: {
+              id: true,
+              name: true,
+              image: true,
+              username: true,
+            },
+          },
         },
       });
-    }
+
+      // Create notification for feed item owner (if not self-commenting)
+      if (feedItem.userId !== session.user.id) {
+        await tx.notification.create({
+          data: {
+            id: crypto.randomUUID(),
+            userId: feedItem.userId,
+            type: "COMMENT",
+            title: "New comment",
+            message: `${session.user.name || "Someone"} commented on your post`,
+            actorId: session.user.id,
+            targetId: feedItemId,
+            targetType: "feedItem",
+          },
+        });
+      }
+
+      return newComment;
+    });
 
     return NextResponse.json({
       comment: {

@@ -2,18 +2,40 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import jwt from "jsonwebtoken";
 import * as jose from "jose";
+import { getCorsHeaders, handleCorsPreflightRequest } from "@/lib/cors";
 
-// Apple's public keys URL
+// Handle preflight requests with secure CORS
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreflightRequest(request);
+}
+
+// Apple's public keys URL and cache
 const APPLE_KEYS_URL = "https://appleid.apple.com/auth/keys";
+let appleKeysCache: { keys: any[]; expiresAt: number } | null = null;
+
+async function getAppleKeys() {
+  const now = Date.now();
+  // Cache keys for 1 hour
+  if (appleKeysCache && now < appleKeysCache.expiresAt) {
+    return appleKeysCache.keys;
+  }
+
+  const response = await fetch(APPLE_KEYS_URL);
+  const { keys } = await response.json();
+  appleKeysCache = { keys, expiresAt: now + 60 * 60 * 1000 };
+  return keys;
+}
 
 async function verifyAppleToken(identityToken: string) {
   try {
-    // Fetch Apple's public keys
-    const response = await fetch(APPLE_KEYS_URL);
-    const { keys } = await response.json();
+    // Get Apple's public keys (cached)
+    const keys = await getAppleKeys();
 
     // Decode the token header to get the key ID
     const tokenParts = identityToken.split(".");
+    if (tokenParts.length !== 3) {
+      throw new Error("Invalid JWT format: expected 3 parts");
+    }
     const header = JSON.parse(Buffer.from(tokenParts[0], "base64").toString());
 
     // Find the matching key
@@ -37,6 +59,7 @@ async function verifyAppleToken(identityToken: string) {
 }
 
 export async function POST(request: NextRequest) {
+  const corsHeaders = getCorsHeaders(request);
   try {
     const { identityToken, user: appleUserId, fullName, email } =
       await request.json();
@@ -44,7 +67,7 @@ export async function POST(request: NextRequest) {
     if (!identityToken) {
       return NextResponse.json(
         { error: "Identity token is required" },
-        { status: 400 }
+        { status: 400, headers: corsHeaders }
       );
     }
 
@@ -69,26 +92,56 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Find or create user by Apple user ID
+    // Find user by Apple user ID first (most reliable)
     let user = await prisma.user.findUnique({
       where: { appleUserId: sub },
     });
 
     if (!user && userEmail) {
-      // Try to find by email
-      user = await prisma.user.findUnique({
+      // Check if email exists in the system
+      const existingUser = await prisma.user.findUnique({
         where: { email: userEmail },
+        include: {
+          Account: {
+            where: { provider: "apple" },
+          },
+        },
       });
+
+      if (existingUser) {
+        // SECURITY FIX: Only link if user already has Apple account linked
+        // Otherwise, require them to log in via their original method and link Apple manually
+        if (existingUser.Account.length > 0) {
+          // User has Apple account linked, but appleUserId wasn't set - update it
+          user = await prisma.user.update({
+            where: { id: existingUser.id },
+            data: {
+              appleUserId: sub,
+              lastActiveAt: new Date(),
+            },
+          });
+        } else {
+          // User exists with email but hasn't linked Apple - potential account takeover
+          return NextResponse.json(
+            {
+              error: "EMAIL_ALREADY_REGISTERED",
+              message: "An account with this email already exists. Please sign in with your original method and link Apple from settings.",
+            },
+            { status: 409, headers: corsHeaders }
+          );
+        }
+      }
     }
 
     if (!user) {
-      // Create new user
+      // Create new user - no existing email conflict
       user = await prisma.user.create({
         data: {
           id: crypto.randomUUID(),
           email: userEmail,
           name: userName,
           appleUserId: sub,
+          updatedAt: new Date(),
           Account: {
             create: {
               id: crypto.randomUUID(),
@@ -99,13 +152,12 @@ export async function POST(request: NextRequest) {
           },
         },
       });
-    } else {
-      // Update user
+    } else if (!user.appleUserId) {
+      // Update existing user with Apple ID
       user = await prisma.user.update({
         where: { id: user.id },
         data: {
           appleUserId: sub,
-          // Only update name if provided and user doesn't have one
           name: user.name || userName,
           lastActiveAt: new Date(),
         },
@@ -130,6 +182,12 @@ export async function POST(request: NextRequest) {
           },
         });
       }
+    } else {
+      // Just update last active time
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { lastActiveAt: new Date() },
+      });
     }
 
     // Generate JWT tokens
@@ -154,12 +212,12 @@ export async function POST(request: NextRequest) {
         email: user.email,
         image: user.image,
       },
-    });
+    }, { headers: corsHeaders });
   } catch (error) {
     console.error("Apple auth error:", error);
     return NextResponse.json(
       { error: "Authentication failed" },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     );
   }
 }

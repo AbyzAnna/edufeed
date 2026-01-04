@@ -2,6 +2,9 @@ import Replicate from "replicate";
 import { InferenceClient } from "@huggingface/inference";
 import { put } from "@vercel/blob";
 
+// Timeout for external API calls (60 seconds for video downloads)
+const EXTERNAL_API_TIMEOUT = 60000;
+
 export interface WanGenerationOptions {
   prompt: string;
   resolution?: "480p" | "720p";
@@ -194,7 +197,13 @@ export async function uploadVideoToStorage(
   videoUrl: string,
   filename: string
 ): Promise<string> {
-  const response = await fetch(videoUrl);
+  // Create AbortController for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT);
+
+  const response = await fetch(videoUrl, { signal: controller.signal });
+  clearTimeout(timeoutId);
+
   const videoBuffer = await response.arrayBuffer();
 
   const blob = await put(`videos/${filename}.mp4`, videoBuffer, {

@@ -30,7 +30,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Deck not found" }, { status: 404 });
     }
 
-    const limit = parseInt(searchParams.get("limit") || "20");
+    const limitParam = parseInt(searchParams.get("limit") || "20", 10);
+    const limit = isNaN(limitParam) ? 20 : Math.min(Math.max(1, limitParam), 100);
     const includeNew = searchParams.get("includeNew") !== "false";
 
     // Get all cards for the deck

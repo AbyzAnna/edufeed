@@ -1,14 +1,69 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { createClient } from "@supabase/supabase-js";
+
+// CORS headers for mobile app access
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+// Handle preflight requests
+export async function OPTIONS() {
+  return NextResponse.json({}, { headers: corsHeaders });
+}
+
+// Create Supabase admin client to verify tokens
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  }
+);
 
 export async function POST(request: NextRequest) {
   try {
+    // CRITICAL FIX: Verify the caller owns this Supabase user ID via their access token
+    const authHeader = request.headers.get("authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return NextResponse.json(
+        { error: "Authorization header required" },
+        { status: 401, headers: corsHeaders }
+      );
+    }
+
+    const accessToken = authHeader.substring(7);
+
+    // Verify the token and get the authenticated user
+    const { data: { user: authenticatedUser }, error: authError } =
+      await supabaseAdmin.auth.getUser(accessToken);
+
+    if (authError || !authenticatedUser) {
+      return NextResponse.json(
+        { error: "Invalid or expired access token" },
+        { status: 401, headers: corsHeaders }
+      );
+    }
+
     const { supabaseUserId, email, name, image } = await request.json();
 
     if (!supabaseUserId) {
       return NextResponse.json(
         { error: "Supabase user ID is required" },
-        { status: 400 }
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    // CRITICAL FIX: Ensure the authenticated user matches the requested user ID
+    if (authenticatedUser.id !== supabaseUserId) {
+      return NextResponse.json(
+        { error: "User ID mismatch - you can only sync your own account" },
+        { status: 403, headers: corsHeaders }
       );
     }
 
@@ -31,6 +86,7 @@ export async function POST(request: NextRequest) {
           name,
           image,
           emailVerified: email ? new Date() : null,
+          updatedAt: new Date(),
         },
       });
     } else if (user.id !== supabaseUserId) {
@@ -87,12 +143,12 @@ export async function POST(request: NextRequest) {
         following: followingCount,
       },
       unreadMessages,
-    });
+    }, { headers: corsHeaders });
   } catch (error) {
     console.error("Supabase auth sync error:", error);
     return NextResponse.json(
       { error: "Failed to sync user" },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     );
   }
 }

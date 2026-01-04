@@ -68,10 +68,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const note = await prisma.mediaNote.create({
       data: {
+        id: crypto.randomUUID(),
         mediaContentId: mediaId,
         userId: session.user.id,
         timestamp,
         content,
+        updatedAt: new Date(),
       },
     });
 

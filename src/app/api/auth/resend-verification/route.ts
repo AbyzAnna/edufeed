@@ -3,17 +3,12 @@ import { createClient } from "@supabase/supabase-js";
 import { sendEmailVerificationEmail } from "@/lib/email/sendgrid";
 import prisma from "@/lib/prisma";
 import crypto from "crypto";
+import { getCorsHeaders, handleCorsPreflightRequest } from "@/lib/cors";
+import { rateLimiters } from "@/lib/rate-limit";
 
-// CORS headers for mobile app access
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
-
-// Handle preflight requests
-export async function OPTIONS() {
-  return NextResponse.json({}, { headers: corsHeaders });
+// Handle preflight requests with secure CORS
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreflightRequest(request);
 }
 
 // Create Supabase admin client
@@ -28,30 +23,8 @@ const supabaseAdmin = createClient(
   }
 );
 
-// Rate limiting map (in production, use Redis)
-const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
-
-function checkRateLimit(identifier: string): boolean {
-  const now = Date.now();
-  const windowMs = 5 * 60 * 1000; // 5 minutes
-  const maxRequests = 3; // Max 3 resend requests per 5 minutes
-
-  const record = rateLimitMap.get(identifier);
-
-  if (!record || now > record.resetTime) {
-    rateLimitMap.set(identifier, { count: 1, resetTime: now + windowMs });
-    return true;
-  }
-
-  if (record.count >= maxRequests) {
-    return false;
-  }
-
-  record.count++;
-  return true;
-}
-
 export async function POST(request: NextRequest) {
+  const corsHeaders = getCorsHeaders(request);
   try {
     const body = await request.json();
     const { email } = body;
@@ -66,11 +39,21 @@ export async function POST(request: NextRequest) {
     // Normalize email
     const normalizedEmail = email.toLowerCase().trim();
 
-    // Rate limit by IP and email
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(normalizedEmail)) {
+      return NextResponse.json(
+        { error: "Invalid email format" },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    // Rate limit by IP and email using shared rate limiter with memory leak prevention
     const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown";
     const rateLimitKey = `${ip}:${normalizedEmail}`;
+    const rateLimitResult = rateLimiters.resendVerification(rateLimitKey);
 
-    if (!checkRateLimit(rateLimitKey)) {
+    if (!rateLimitResult.allowed) {
       return NextResponse.json(
         { error: "Too many requests. Please wait 5 minutes before trying again." },
         { status: 429, headers: corsHeaders }
@@ -86,26 +69,34 @@ export async function POST(request: NextRequest) {
       { headers: corsHeaders }
     );
 
-    // Check if user exists in Supabase
-    const { data: userData, error: userError } = await supabaseAdmin.auth.admin.listUsers();
+    // First check Prisma for user existence (fast, indexed query)
+    const prismaUser = await prisma.user.findFirst({
+      where: { email: normalizedEmail },
+      select: { id: true, name: true, emailVerified: true },
+    });
 
-    if (userError) {
-      console.error("Error fetching users:", userError);
-      return successResponse;
-    }
-
-    const supabaseUser = userData.users.find(
-      (u) => u.email?.toLowerCase() === normalizedEmail
-    );
-
-    if (!supabaseUser) {
-      // User doesn't exist
+    if (!prismaUser) {
+      // User doesn't exist in our database
       console.log(`Resend verification requested for non-existent email: ${normalizedEmail}`);
       return successResponse;
     }
 
-    // Check if email is already confirmed
-    if (supabaseUser.email_confirmed_at) {
+    // Check if already verified via Prisma (faster than Supabase)
+    if (prismaUser.emailVerified) {
+      console.log(`Resend verification requested for already verified email: ${normalizedEmail}`);
+      return successResponse;
+    }
+
+    // Verify with Supabase using the user ID (O(1) lookup instead of listing all users)
+    const { data: supabaseUser, error: userError } = await supabaseAdmin.auth.admin.getUserById(prismaUser.id);
+
+    if (userError || !supabaseUser?.user) {
+      console.error("Error fetching Supabase user:", userError);
+      return successResponse;
+    }
+
+    // Double-check email confirmation status in Supabase
+    if (supabaseUser.user.email_confirmed_at) {
       console.log(`Resend verification requested for already verified email: ${normalizedEmail}`);
       return successResponse;
     }
@@ -115,24 +106,14 @@ export async function POST(request: NextRequest) {
     const verificationTokenHash = crypto.createHash("sha256").update(verificationToken).digest("hex");
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours from now
 
-    // Update or create verification token and get user name in transaction
-    let userName: string | null = null;
+    // Update or create verification token (we already have user name from earlier query)
+    const userName = prismaUser.name;
 
     try {
-      await prisma.$transaction(async (tx) => {
-        // Upsert token
-        await tx.emailVerificationToken.upsert({
-          where: { email: normalizedEmail },
-          update: { token: verificationTokenHash, expiresAt },
-          create: { email: normalizedEmail, token: verificationTokenHash, expiresAt },
-        });
-
-        // Get user name for personalization
-        const prismaUser = await tx.user.findFirst({
-          where: { email: normalizedEmail },
-          select: { name: true },
-        });
-        userName = prismaUser?.name || null;
+      await prisma.emailVerificationToken.upsert({
+        where: { email: normalizedEmail },
+        update: { token: verificationTokenHash, expiresAt },
+        create: { id: crypto.randomUUID(), email: normalizedEmail, token: verificationTokenHash, expiresAt },
       });
     } catch (dbError) {
       console.error("Database error creating verification token:", dbError);

@@ -10,9 +10,9 @@ import {
   FileText,
   Users,
   MessageSquare,
-  Settings,
   X,
   Monitor,
+  Share2,
 } from "lucide-react";
 import Link from "next/link";
 import Button from "@/components/ui/Button";
@@ -93,6 +93,7 @@ export default function StudyRoomView({ roomId }: StudyRoomViewProps) {
   const [sending, setSending] = useState(false);
   const [activePanel, setActivePanel] = useState<PanelType>("chat");
   const [copied, setCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [showPreJoin, setShowPreJoin] = useState(true);
   const [preJoinAudio, setPreJoinAudio] = useState(true);
   const [preJoinVideo, setPreJoinVideo] = useState(true);
@@ -229,19 +230,29 @@ export default function StudyRoomView({ roomId }: StudyRoomViewProps) {
   };
 
   const handleJoinCall = async () => {
-    await webrtc.join({ audio: preJoinAudio, video: preJoinVideo });
-    setShowPreJoin(false);
+    try {
+      await webrtc.join({ audio: preJoinAudio, video: preJoinVideo });
+      setShowPreJoin(false);
 
-    // Update status in DB
-    await fetch(`/api/study-rooms/${roomId}/participants`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        status: "ONLINE",
-        isAudioOn: preJoinAudio,
-        isVideoOn: preJoinVideo,
-      }),
-    });
+      // Update status in DB
+      const response = await fetch(`/api/study-rooms/${roomId}/participants`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "ONLINE",
+          isAudioOn: preJoinAudio,
+          isVideoOn: preJoinVideo,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error("Failed to update participant status:", response.status);
+      }
+    } catch (error) {
+      console.error("Error joining call:", error);
+      // Revert UI state if join failed
+      setShowPreJoin(true);
+    }
   };
 
   const handleLeave = async () => {
@@ -259,19 +270,27 @@ export default function StudyRoomView({ roomId }: StudyRoomViewProps) {
     window.location.href = "/study-rooms";
   };
 
-  const handleToggleScreenShare = async () => {
-    if (webrtc.isScreenSharing) {
-      webrtc.stopScreenShare();
-    } else {
-      await webrtc.startScreenShare();
-    }
-  };
+  // Note: Screen sharing removed - this is a collaboration-only platform
 
   const copyCode = async () => {
     if (room) {
       await navigator.clipboard.writeText(room.code);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const copyShareLink = async () => {
+    if (room) {
+      const shareUrl = `${window.location.origin}/study-room/${room.id}`;
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        setLinkCopied(true);
+        setTimeout(() => setLinkCopied(false), 2000);
+      } catch (error) {
+        // Fallback for browsers that don't support clipboard API
+        console.error("Failed to copy share link:", error);
+      }
     }
   };
 
@@ -475,18 +494,34 @@ export default function StudyRoomView({ roomId }: StudyRoomViewProps) {
             </div>
           </div>
 
-          {/* Notebook link */}
-          {room.notebook && (
-            <Link
-              href={`/notebook/${room.notebook.id}`}
-              target="_blank"
-              className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-white transition-colors"
+          <div className="flex items-center gap-2">
+            {/* Share button */}
+            <button
+              onClick={copyShareLink}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-white transition-colors ${
+                linkCopied ? 'bg-green-500/20 text-green-400' : 'bg-white/5 hover:bg-white/10'
+              }`}
+              title="Copy share link"
             >
-              <span>{room.notebook.emoji || "📚"}</span>
-              <span className="text-sm font-medium hidden md:block">{room.notebook.title}</span>
-              <FileText className="w-4 h-4 md:hidden" />
-            </Link>
-          )}
+              <Share2 className="w-4 h-4" />
+              <span className="text-sm font-medium hidden md:block">
+                {linkCopied ? 'Copied!' : 'Share'}
+              </span>
+            </button>
+
+            {/* Notebook link */}
+            {room.notebook && (
+              <Link
+                href={`/notebook/${room.notebook.id}`}
+                target="_blank"
+                className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-white transition-colors"
+              >
+                <span>{room.notebook.emoji || "📚"}</span>
+                <span className="text-sm font-medium hidden md:block">{room.notebook.title}</span>
+                <FileText className="w-4 h-4 md:hidden" />
+              </Link>
+            )}
+          </div>
         </div>
       </header>
 
@@ -771,13 +806,11 @@ export default function StudyRoomView({ roomId }: StudyRoomViewProps) {
       <MediaControls
         isAudioOn={webrtc.isAudioOn}
         isVideoOn={webrtc.isVideoOn}
-        isScreenSharing={webrtc.isScreenSharing}
         isJoined={webrtc.isJoined}
         participantCount={webrtc.participants.length + 1}
         messageCount={messages.filter((m) => m.type !== "SYSTEM").length}
         onToggleAudio={webrtc.toggleAudio}
         onToggleVideo={webrtc.toggleVideo}
-        onToggleScreenShare={handleToggleScreenShare}
         onLeave={handleLeave}
         onOpenChat={() => togglePanel("chat")}
         onOpenParticipants={() => togglePanel("participants")}

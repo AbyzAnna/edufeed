@@ -1,17 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Mic,
   MicOff,
   Video,
   VideoOff,
-  Monitor,
-  MonitorOff,
   Phone,
   Settings,
   MoreVertical,
-  Hand,
   MessageSquare,
   Users,
 } from "lucide-react";
@@ -19,13 +16,11 @@ import {
 interface MediaControlsProps {
   isAudioOn: boolean;
   isVideoOn: boolean;
-  isScreenSharing: boolean;
   isJoined: boolean;
   participantCount: number;
   messageCount?: number;
   onToggleAudio: () => void;
   onToggleVideo: () => void;
-  onToggleScreenShare: () => void;
   onLeave: () => void;
   onOpenChat?: () => void;
   onOpenParticipants?: () => void;
@@ -37,13 +32,11 @@ interface MediaControlsProps {
 export default function MediaControls({
   isAudioOn,
   isVideoOn,
-  isScreenSharing,
   isJoined,
   participantCount,
   messageCount,
   onToggleAudio,
   onToggleVideo,
-  onToggleScreenShare,
   onLeave,
   onOpenChat,
   onOpenParticipants,
@@ -58,9 +51,6 @@ export default function MediaControls({
 
   const activeButton = `${buttonBase} bg-white/10 hover:bg-white/20 text-white focus:ring-white/50`;
   const inactiveButton = `${buttonBase} bg-red-500/20 hover:bg-red-500/30 text-red-400 focus:ring-red-500/50`;
-  const screenShareButton = isScreenSharing
-    ? `${buttonBase} bg-green-500/20 hover:bg-green-500/30 text-green-400 focus:ring-green-500/50`
-    : activeButton;
   const leaveButton = `${buttonBase} bg-red-600 hover:bg-red-700 text-white focus:ring-red-500`;
 
   return (
@@ -101,22 +91,7 @@ export default function MediaControls({
           </span>
         </button>
 
-        {/* Screen Share */}
-        <button
-          onClick={onToggleScreenShare}
-          disabled={!isJoined}
-          className={screenShareButton}
-          title={isScreenSharing ? "Stop sharing" : "Share screen"}
-        >
-          {isScreenSharing ? (
-            <MonitorOff className="w-5 h-5 md:w-6 md:h-6" />
-          ) : (
-            <Monitor className="w-5 h-5 md:w-6 md:h-6" />
-          )}
-          <span className="sr-only">
-            {isScreenSharing ? "Stop sharing screen" : "Share screen"}
-          </span>
-        </button>
+        {/* Note: Screen sharing removed - this is a collaboration-only platform */}
       </div>
 
       {/* Divider */}

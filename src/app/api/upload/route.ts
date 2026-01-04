@@ -19,21 +19,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    // Validate file type (PDF, images, audio)
-    const allowedTypes = [
-      "application/pdf",
-      "image/jpeg",
-      "image/png",
-      "image/gif",
-      "image/webp",
-      "audio/mpeg",
-      "audio/wav",
-      "audio/mp4",
-    ];
+    // Validate file type (PDF, images, audio) - must match both MIME and extension
+    const allowedTypesAndExtensions: Record<string, string[]> = {
+      "application/pdf": ["pdf"],
+      "image/jpeg": ["jpg", "jpeg"],
+      "image/png": ["png"],
+      "image/gif": ["gif"],
+      "image/webp": ["webp"],
+      "audio/mpeg": ["mp3", "mpeg"],
+      "audio/wav": ["wav"],
+      "audio/mp4": ["m4a", "mp4"],
+    };
 
-    if (!allowedTypes.includes(file.type)) {
+    const allowedMimeTypes = Object.keys(allowedTypesAndExtensions);
+    if (!allowedMimeTypes.includes(file.type)) {
       return NextResponse.json(
         { error: "File type not supported. Allowed: PDF, images, audio" },
+        { status: 400 }
+      );
+    }
+
+    // Validate that file extension matches MIME type (prevent polyglot attacks)
+    const ext = (file.name.split(".").pop() || "").toLowerCase();
+    const validExtensions = allowedTypesAndExtensions[file.type] || [];
+    if (!validExtensions.includes(ext)) {
+      return NextResponse.json(
+        { error: `File extension must match content type. Expected: ${validExtensions.join(", ")}` },
         { status: 400 }
       );
     }
@@ -48,7 +59,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate unique filename with folder structure
-    const ext = file.name.split(".").pop() || "bin";
+    // ext is already validated above, use it for the filename
     const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
     const filename = `${session.user.id}/${Date.now()}-${sanitizedName}`;
 
@@ -78,8 +89,9 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Don't expose internal error details
       return NextResponse.json(
-        { error: `Upload failed: ${error.message}` },
+        { error: "Upload failed. Please try again later." },
         { status: 500 }
       );
     }
@@ -98,9 +110,9 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Error uploading file:", error);
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    // Don't expose internal error details to prevent information disclosure
     return NextResponse.json(
-      { error: `Failed to upload file: ${errorMessage}` },
+      { error: "Failed to upload file. Please try again later." },
       { status: 500 }
     );
   }

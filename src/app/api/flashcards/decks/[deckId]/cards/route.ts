@@ -67,11 +67,33 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Support both single card and bulk creation
     const cardsToCreate = Array.isArray(body) ? body : [body];
 
+    // SECURITY FIX: Limit bulk creation to prevent DoS
+    const MAX_BULK_CREATE = 100;
+    if (cardsToCreate.length === 0) {
+      return NextResponse.json(
+        { error: "At least one card is required" },
+        { status: 400 }
+      );
+    }
+    if (cardsToCreate.length > MAX_BULK_CREATE) {
+      return NextResponse.json(
+        { error: `Cannot create more than ${MAX_BULK_CREATE} cards at once` },
+        { status: 400 }
+      );
+    }
+
     // Validate cards
     for (const card of cardsToCreate) {
       if (!card.front || !card.back) {
         return NextResponse.json(
           { error: "Front and back are required for each card" },
+          { status: 400 }
+        );
+      }
+      // Validate content length to prevent excessively large cards
+      if (card.front.length > 5000 || card.back.length > 10000) {
+        return NextResponse.json(
+          { error: "Card content exceeds maximum length" },
           { status: 400 }
         );
       }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { X, RotateCcw, ChevronLeft, ChevronRight, Lightbulb } from "lucide-react";
 import { getQualityLabel, getQualityColor } from "@/lib/flashcards/sm2";
 
@@ -44,6 +44,8 @@ export default function StudySession({
   >(new Map());
   const [startTime, setStartTime] = useState<number>(Date.now());
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Use ref to avoid stale closure in submitReview callback
+  const isSubmittingRef = useRef(false);
 
   const currentCard = cards[currentIndex];
   const progress = ((currentIndex + 1) / cards.length) * 100;
@@ -57,7 +59,9 @@ export default function StudySession({
 
   const submitReview = useCallback(
     async (quality: number) => {
-      if (isSubmitting) return;
+      // Use ref to prevent stale closure issues with rapid submissions
+      if (isSubmittingRef.current) return;
+      isSubmittingRef.current = true;
       setIsSubmitting(true);
 
       const responseMs = Date.now() - startTime;
@@ -105,10 +109,11 @@ export default function StudySession({
       } catch (error) {
         console.error("Error submitting review:", error);
       } finally {
+        isSubmittingRef.current = false;
         setIsSubmitting(false);
       }
     },
-    [currentCard, currentIndex, cards.length, deckId, reviewedCards, startTime, onComplete, isSubmitting]
+    [currentCard, currentIndex, cards.length, deckId, reviewedCards, startTime, onComplete]
   );
 
   // Keyboard shortcuts

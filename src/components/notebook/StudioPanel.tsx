@@ -413,7 +413,7 @@ export default function StudioPanel({
 
   return (
     <>
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full min-h-0">
         {/* Header */}
         <div className="flex-shrink-0 p-4 border-b border-white/5">
           <h2 className="text-sm font-semibold text-white mb-1">Studio</h2>
@@ -450,7 +450,7 @@ export default function StudioPanel({
         </div>
 
         {/* Generated Notes */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-xs font-semibold text-white/60 uppercase tracking-wider">

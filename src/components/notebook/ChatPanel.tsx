@@ -329,7 +329,7 @@ export default function ChatPanel({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#1a1a1a]">
+    <div className="flex flex-col h-full min-h-0 bg-[#1a1a1a]">
       {/* Header */}
       <div className="flex-shrink-0 px-6 py-3 border-b border-white/5">
         <h2 className="text-sm font-semibold text-white">Chat</h2>
@@ -340,8 +340,8 @@ export default function ChatPanel({
         </p>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-6 py-4">
+      {/* Messages - scrollable area */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
         {/* AI Overview */}
         <AIOverview
           sources={sources}
@@ -350,7 +350,7 @@ export default function ChatPanel({
         />
 
         {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center min-h-[300px] text-center">
+          <div className="flex flex-col items-center justify-center py-8 text-center">
             <div className="w-16 h-16 rounded-full bg-purple-500/10 flex items-center justify-center mb-4">
               <Bot className="w-8 h-8 text-purple-400" />
             </div>
@@ -404,7 +404,7 @@ export default function ChatPanel({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
+      {/* Input - fixed at bottom */}
       <div className="flex-shrink-0 p-4 border-t border-white/5">
         <form onSubmit={handleSubmit} className="relative">
           <textarea

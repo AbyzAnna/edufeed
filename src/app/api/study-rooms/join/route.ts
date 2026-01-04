@@ -73,6 +73,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if room is private and user has invite
+    let inviteId: string | null = null;
     if (room.isPrivate) {
       const invite = await prisma.studyRoomInvite.findFirst({
         where: {
@@ -89,34 +90,49 @@ export async function POST(request: NextRequest) {
           { status: 403 }
         );
       }
-
-      // Accept the invite
-      await prisma.studyRoomInvite.update({
-        where: { id: invite.id },
-        data: { status: "ACCEPTED" },
-      });
+      inviteId = invite.id;
     }
 
-    // Add participant
-    await prisma.studyRoomParticipant.create({
-      data: {
-        id: crypto.randomUUID(),
-        roomId: room.id,
-        userId: session.user.id,
-        role: "PARTICIPANT",
-        status: "ONLINE",
-      },
-    });
+    // Use transaction to ensure atomicity of all join operations
+    // This also prevents race condition where capacity check passes but room fills up
+    await prisma.$transaction(async (tx) => {
+      // Re-check capacity within transaction to prevent race condition
+      const currentCount = await tx.studyRoomParticipant.count({
+        where: { roomId: room.id },
+      });
+      if (currentCount >= room.maxParticipants) {
+        throw new Error("ROOM_FULL");
+      }
 
-    // Create system message for join
-    await prisma.studyRoomMessage.create({
-      data: {
-        id: crypto.randomUUID(),
-        roomId: room.id,
-        userId: session.user.id,
-        type: "SYSTEM",
-        content: `${session.user.name || "Someone"} joined the room`,
-      },
+      // Accept the invite if private room
+      if (inviteId) {
+        await tx.studyRoomInvite.update({
+          where: { id: inviteId },
+          data: { status: "ACCEPTED" },
+        });
+      }
+
+      // Add participant
+      await tx.studyRoomParticipant.create({
+        data: {
+          id: crypto.randomUUID(),
+          roomId: room.id,
+          userId: session.user.id,
+          role: "PARTICIPANT",
+          status: "ONLINE",
+        },
+      });
+
+      // Create system message for join
+      await tx.studyRoomMessage.create({
+        data: {
+          id: crypto.randomUUID(),
+          roomId: room.id,
+          userId: session.user.id,
+          type: "SYSTEM",
+          content: `${session.user.name || "Someone"} joined the room`,
+        },
+      });
     });
 
     return NextResponse.json({
@@ -125,6 +141,10 @@ export async function POST(request: NextRequest) {
       message: "Joined room successfully",
     });
   } catch (error) {
+    // Handle specific error for room full (thrown from transaction)
+    if (error instanceof Error && error.message === "ROOM_FULL") {
+      return NextResponse.json({ error: "Room is full" }, { status: 400 });
+    }
     console.error("Error joining room:", error);
     return NextResponse.json(
       { error: "Failed to join room" },

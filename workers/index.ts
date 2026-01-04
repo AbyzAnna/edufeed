@@ -3,6 +3,7 @@ import { chatWithDocument, continueChatConversation } from './lib/chat';
 import { generateStudyGuide, generateStudyPlan } from './lib/study-guide';
 import { generateFlashcards, generateClozeCards } from './lib/flashcards';
 import { generateAudioOverview } from './lib/audio-overview';
+import { generateVideoOverview } from './lib/video-overview';
 import { storeDocumentEmbeddings, deleteSourceEmbeddings, generateEmbedding } from './lib/embeddings';
 import { generateDirectSummary, generateDirectFlashcards, generateDirectTable } from './lib/direct-content';
 import { moderateContent } from './lib/moderation';
@@ -71,6 +72,10 @@ export default {
         case path === '/api/audio-overview/generate' && request.method === 'POST':
           return handleGenerateAudioOverview(request, env, corsHeaders);
 
+        // Video overview endpoints
+        case path === '/api/video-overview/generate' && request.method === 'POST':
+          return handleGenerateVideoOverview(request, env, corsHeaders);
+
         // YouTube endpoints
         case path === '/api/youtube/key-moments' && request.method === 'POST':
           return handleYouTubeKeyMoments(request, env, corsHeaders);
@@ -103,6 +108,10 @@ export default {
         // Universal generate endpoint for notebook outputs
         case path === '/api/generate' && request.method === 'POST':
           return handleGenerate(request, env, corsHeaders);
+
+        // Notebook chat endpoint (returns plain text responses)
+        case path === '/api/notebook-chat' && request.method === 'POST':
+          return handleNotebookChat(request, env, corsHeaders);
 
         // Content moderation endpoint
         case path === '/moderation' && request.method === 'POST':
@@ -306,6 +315,41 @@ async function handleGenerateAudioOverview(
   return jsonResponse(audioOverview, 200, corsHeaders);
 }
 
+/**
+ * Handle video overview generation
+ * Generates AI images + audio slideshow video
+ */
+async function handleGenerateVideoOverview(
+  request: Request,
+  env: Env,
+  corsHeaders: Record<string, string>
+): Promise<Response> {
+  try {
+    const { sourceId, context } = await request.json() as {
+      sourceId?: string;
+      context: string;
+    };
+
+    if (!context) {
+      return jsonResponse({ error: 'Missing context' }, 400, corsHeaders);
+    }
+
+    const videoOverview = await generateVideoOverview(
+      sourceId || 'direct',
+      context,
+      env
+    );
+
+    return jsonResponse(videoOverview, 200, corsHeaders);
+  } catch (error) {
+    console.error('Video overview error:', error);
+    return jsonResponse({
+      error: 'Video generation failed',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    }, 500, corsHeaders);
+  }
+}
+
 // ==================== YouTube Handlers ====================
 
 /**
@@ -432,7 +476,9 @@ const YOUTUBE_INNERTUBE_CONFIG = {
     clientName: 'WEB',
     clientVersion: '2.20240101.00.00',
   },
-  apiKey: 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', // Public YouTube innertube API key
+  // Note: This is the public YouTube innertube API key used by the official YouTube web client
+  // It's designed to be public but should be moved to env for easy rotation if needed
+  apiKey: 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
 };
 
 /**
@@ -1178,13 +1224,18 @@ CRITICAL: You MUST respond with ONLY valid JSON. No markdown formatting, no code
           // Limit text for TTS (MeloTTS has limits)
           const ttsText = fullText.substring(0, 3000);
 
+          // MeloTTS uses 'prompt' parameter, not 'text'
+          // Response is an object with 'audio' property containing base64-encoded MP3
           const ttsResponse = await env.AI.run('@cf/myshell-ai/melotts', {
-            text: ttsText,
+            prompt: ttsText,
             lang: 'en',
-          });
+          }) as { audio?: string } | ArrayBuffer;
 
-          // Convert response to base64 audio URL
-          if (ttsResponse && ttsResponse instanceof ArrayBuffer) {
+          // Handle new response format: object with audio property (base64 MP3)
+          if (ttsResponse && typeof ttsResponse === 'object' && 'audio' in ttsResponse && ttsResponse.audio) {
+            content.audioUrl = `data:audio/mpeg;base64,${ttsResponse.audio}`;
+          } else if (ttsResponse && ttsResponse instanceof ArrayBuffer) {
+            // Fallback: handle legacy ArrayBuffer response
             const bytes = new Uint8Array(ttsResponse);
             const chunkSize = 8192;
             let base64 = '';
@@ -1206,6 +1257,120 @@ CRITICAL: You MUST respond with ONLY valid JSON. No markdown formatting, no code
     console.error('Generate error:', error);
     return jsonResponse({
       error: 'Generation failed',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    }, 500, corsHeaders);
+  }
+}
+
+// ==================== Notebook Chat Handler ====================
+
+/**
+ * Handle notebook chat - returns plain text responses for Q&A
+ * This endpoint is designed for conversational Q&A, not structured output generation
+ */
+async function handleNotebookChat(
+  request: Request,
+  env: Env,
+  corsHeaders: Record<string, string>
+): Promise<Response> {
+  try {
+    const body = await request.json() as {
+      message: string;
+      context: string;
+      conversationHistory?: Array<{ role: string; content: string }>;
+    };
+
+    const { message, context, conversationHistory = [] } = body;
+
+    if (!message) {
+      return jsonResponse({ error: 'Missing message' }, 400, corsHeaders);
+    }
+
+    // Truncate context if too long
+    const maxContextLength = 10000;
+    const truncatedContext = context && context.length > maxContextLength
+      ? context.substring(0, maxContextLength) + '\n\n[Content truncated...]'
+      : context || '';
+
+    // Build system prompt for conversational Q&A
+    const systemPrompt = `You are a helpful AI study assistant. Your role is to answer questions accurately and helpfully based on the provided notebook content.
+
+RESPONSE GUIDELINES:
+- Answer questions directly and concisely
+- Keep responses short (2-4 sentences for simple questions)
+- Use bullet points for complex topics or lists
+- If the answer is in the provided content, cite it naturally
+- If asked about something not in the content, provide a helpful general answer
+- Be educational and clear
+- Never refuse to answer - always try to help
+
+IMPORTANT: Respond in plain text only. Do NOT use JSON format. Just answer naturally.`;
+
+    // Build messages array
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      { role: 'system', content: systemPrompt },
+    ];
+
+    // Add context as a system message if available
+    if (truncatedContext) {
+      messages.push({
+        role: 'system',
+        content: `Here is the notebook content to reference:\n\n${truncatedContext}`,
+      });
+    }
+
+    // Add conversation history
+    for (const msg of conversationHistory.slice(-6)) { // Last 6 messages for context
+      messages.push({
+        role: msg.role === 'user' ? 'user' : 'assistant',
+        content: msg.content,
+      });
+    }
+
+    // Add the current message
+    messages.push({ role: 'user', content: message });
+
+    // Generate response using Llama 3.3
+    const response = await env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
+      messages,
+      temperature: 0.7,
+      max_tokens: 1024,
+    });
+
+    const responseText = response.response || '';
+
+    // Clean up the response - remove any accidental JSON formatting
+    let cleanResponse = responseText.trim();
+
+    // If the AI accidentally returned JSON, try to extract the text
+    if (cleanResponse.startsWith('{') || cleanResponse.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(cleanResponse);
+        // Try to extract meaningful text from JSON
+        cleanResponse =
+          parsed.response ||
+          parsed.answer ||
+          parsed.message ||
+          parsed.text ||
+          parsed.content ||
+          parsed.explanation ||
+          (typeof parsed === 'object'
+            ? Object.values(parsed).find(v => typeof v === 'string' && (v as string).length > 20)
+            : null) ||
+          cleanResponse;
+      } catch {
+        // Not valid JSON, use as-is
+      }
+    }
+
+    return jsonResponse({
+      response: cleanResponse,
+      success: true,
+    }, 200, corsHeaders);
+  } catch (error) {
+    console.error('Notebook chat error:', error);
+    return jsonResponse({
+      error: 'Chat failed',
       message: error instanceof Error ? error.message : 'Unknown error',
     }, 500, corsHeaders);
   }

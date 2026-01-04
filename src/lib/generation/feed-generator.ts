@@ -155,11 +155,13 @@ async function generateFlashcardDeckItem(
   // Create feed item first
   const feedItem = await prisma.feedItem.create({
     data: {
+      id: crypto.randomUUID(),
       userId,
       sourceId,
       type: "FLASHCARD_DECK",
       title: `Flashcards: ${title}`,
       status: "PROCESSING",
+      updatedAt: new Date(),
     },
   });
 
@@ -181,6 +183,7 @@ async function generateFlashcardDeckItem(
         title: `Flashcards: ${title}`,
         description: `Auto-generated flashcard deck from ${title}`,
         color: getRandomColor(),
+        updatedAt: new Date(),
         Flashcard: {
           create: flashcards.map((card) => ({
             id: crypto.randomUUID(),
@@ -228,11 +231,13 @@ async function generateSummaryItem(
   // Create feed item first
   const feedItem = await prisma.feedItem.create({
     data: {
+      id: crypto.randomUUID(),
       userId,
       sourceId,
       type,
       title: `Summary: ${title}`,
       status: "PROCESSING",
+      updatedAt: new Date(),
     },
   });
 
@@ -305,11 +310,13 @@ async function generateTableItem(
   // Create feed item first
   const feedItem = await prisma.feedItem.create({
     data: {
+      id: crypto.randomUUID(),
       userId,
       sourceId,
       type: "TABLE",
       title: `Table: ${title}`,
       status: "PROCESSING",
+      updatedAt: new Date(),
     },
   });
 

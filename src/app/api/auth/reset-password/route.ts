@@ -3,17 +3,12 @@ import { createClient } from "@supabase/supabase-js";
 import { sendPasswordResetSuccessEmail } from "@/lib/email/sendgrid";
 import prisma from "@/lib/prisma";
 import crypto from "crypto";
+import { getCorsHeaders, handleCorsPreflightRequest } from "@/lib/cors";
+import { rateLimiters } from "@/lib/rate-limit";
 
-// CORS headers for mobile app access
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
-
-// Handle preflight requests
-export async function OPTIONS() {
-  return NextResponse.json({}, { headers: corsHeaders });
+// Handle preflight requests with secure CORS
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreflightRequest(request);
 }
 
 // Create Supabase admin client
@@ -29,6 +24,7 @@ const supabaseAdmin = createClient(
 );
 
 export async function POST(request: NextRequest) {
+  const corsHeaders = getCorsHeaders(request);
   try {
     const body = await request.json();
     const { token, email, password } = body;
@@ -41,16 +37,44 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate password strength
-    if (password.length < 6) {
+    // Normalize email first for rate limiting
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Rate limit by IP and email using shared rate limiter
+    const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown";
+    const rateLimitKey = `${ip}:${normalizedEmail}`;
+    const rateLimitResult = rateLimiters.passwordReset(rateLimitKey);
+
+    if (!rateLimitResult.allowed) {
       return NextResponse.json(
-        { error: "Password must be at least 6 characters long" },
-        { status: 400, headers: corsHeaders }
+        { error: "Too many password reset attempts. Please try again in 15 minutes." },
+        { status: 429, headers: corsHeaders }
       );
     }
 
-    // Normalize email
-    const normalizedEmail = email.toLowerCase().trim();
+    // Validate password strength - enforce strong passwords (match signup requirements)
+    const passwordErrors: string[] = [];
+    if (password.length < 8) {
+      passwordErrors.push("at least 8 characters");
+    }
+    if (password.length > 128) {
+      passwordErrors.push("no more than 128 characters");
+    }
+    if (!/[A-Z]/.test(password)) {
+      passwordErrors.push("at least one uppercase letter");
+    }
+    if (!/[a-z]/.test(password)) {
+      passwordErrors.push("at least one lowercase letter");
+    }
+    if (!/[0-9]/.test(password)) {
+      passwordErrors.push("at least one number");
+    }
+    if (passwordErrors.length > 0) {
+      return NextResponse.json(
+        { error: `Password must have ${passwordErrors.join(", ")}` },
+        { status: 400, headers: corsHeaders }
+      );
+    }
 
     // Hash the token to compare with stored hash
     const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
@@ -73,22 +97,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find the Supabase user
-    const { data: userData, error: userError } = await supabaseAdmin.auth.admin.listUsers();
+    // Find the user in Prisma first (fast, indexed query) to get their Supabase ID
+    const prismaUser = await prisma.user.findFirst({
+      where: { email: normalizedEmail },
+      select: { id: true, name: true },
+    });
 
-    if (userError) {
-      console.error("Error fetching users:", userError);
-      return NextResponse.json(
-        { error: "An error occurred. Please try again." },
-        { status: 500, headers: corsHeaders }
-      );
-    }
-
-    const supabaseUser = userData.users.find(
-      (u) => u.email?.toLowerCase() === normalizedEmail
-    );
-
-    if (!supabaseUser) {
+    if (!prismaUser) {
       // Delete the token since email doesn't match any user
       await prisma.passwordResetToken.delete({
         where: { id: resetToken.id },
@@ -100,9 +115,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Verify user exists in Supabase using ID (O(1) lookup instead of listing all users)
+    const { data: supabaseUser, error: userError } = await supabaseAdmin.auth.admin.getUserById(prismaUser.id);
+
+    if (userError || !supabaseUser?.user) {
+      console.error("Error fetching Supabase user:", userError);
+      return NextResponse.json(
+        { error: "An error occurred. Please try again." },
+        { status: 500, headers: corsHeaders }
+      );
+    }
+
     // Update the user's password in Supabase
     const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
-      supabaseUser.id,
+      supabaseUser.user.id,
       { password }
     );
 
@@ -114,27 +140,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Delete tokens and get user name in a single transaction
-    let userName: string | null = null;
+    // Delete all reset tokens for this email (we already have user name from earlier query)
+    const userName = prismaUser.name;
 
     try {
-      await prisma.$transaction(async (tx) => {
-        // Delete the used reset token
-        await tx.passwordResetToken.delete({
-          where: { id: resetToken.id },
-        });
-
-        // Delete any other reset tokens for this email
-        await tx.passwordResetToken.deleteMany({
-          where: { email: normalizedEmail },
-        });
-
-        // Get user name for personalization
-        const prismaUser = await tx.user.findFirst({
-          where: { email: normalizedEmail },
-          select: { name: true },
-        });
-        userName = prismaUser?.name || null;
+      // Delete all reset tokens for this email in one operation
+      await prisma.passwordResetToken.deleteMany({
+        where: { email: normalizedEmail },
       });
     } catch (dbError) {
       console.error("Database error during token cleanup:", dbError);
@@ -176,6 +188,7 @@ export async function POST(request: NextRequest) {
 
 // Validate token endpoint (for checking if token is valid before showing form)
 export async function GET(request: NextRequest) {
+  const corsHeaders = getCorsHeaders(request);
   try {
     const searchParams = request.nextUrl.searchParams;
     const token = searchParams.get("token");

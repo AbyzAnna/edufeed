@@ -6,10 +6,16 @@ export async function updateSession(request: NextRequest) {
     request,
   })
 
-  // Check for E2E test mode bypass via cookie
-  const isE2ETest = request.cookies.get('e2e-test-mode')?.value === 'true'
-  if (isE2ETest && process.env.NODE_ENV !== 'production') {
-    // In test mode, skip auth checks
+  // E2E test mode bypass - ONLY enabled if E2E_TEST_SECRET is configured and matches
+  // This prevents unauthorized access via simply setting a cookie
+  const e2eTestSecret = process.env.E2E_TEST_SECRET;
+  const e2eCookieValue = request.cookies.get('e2e-test-mode')?.value;
+  const isValidE2ETest = e2eTestSecret &&
+                          e2eCookieValue === e2eTestSecret &&
+                          process.env.NODE_ENV !== 'production';
+
+  if (isValidE2ETest) {
+    // In test mode with valid secret, skip auth checks
     return supabaseResponse
   }
 

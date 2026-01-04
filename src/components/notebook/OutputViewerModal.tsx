@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   X,
   Play,
@@ -23,7 +23,10 @@ import {
   HelpCircle,
   Maximize2,
   Minimize2,
+  Loader2,
+  Film,
 } from "lucide-react";
+import AdvancedMindMapViewer from "./MindMapViewer";
 
 interface Output {
   id: string;
@@ -89,7 +92,7 @@ export default function OutputViewerModal({ output, onClose }: OutputViewerModal
       case "VIDEO_OVERVIEW":
         return <VideoOverviewViewer output={output} />;
       case "MIND_MAP":
-        return <MindMapViewer output={output} />;
+        return <AdvancedMindMapViewer content={output.content} />;
       case "SUMMARY":
         return <SummaryViewer output={output} />;
       case "FLASHCARD_DECK":
@@ -233,9 +236,14 @@ function AudioOverviewViewer({ output }: { output: Output }) {
           <audio
             ref={audioRef}
             src={audioUrl}
+            muted={isMuted}
+            preload="auto"
             onTimeUpdate={handleTimeUpdate}
             onLoadedMetadata={handleLoadedMetadata}
             onEnded={() => setIsPlaying(false)}
+            onError={(e) => {
+              console.error('Audio failed to load:', e);
+            }}
           />
 
           {/* Progress Bar */}
@@ -321,27 +329,759 @@ function AudioOverviewViewer({ output }: { output: Output }) {
 
 // ==================== Video Overview Viewer ====================
 
+interface VideoSegment {
+  title: string;
+  narration: string;
+  visualDescription?: string;
+  duration: number;
+  imageUrl?: string;
+}
+
+interface VideoGenerationProgress {
+  stage: "loading" | "preparing" | "processing" | "encoding" | "finalizing" | "complete" | "error";
+  progress: number;
+  message: string;
+}
+
 function VideoOverviewViewer({ output }: { output: Output }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentSegment, setCurrentSegment] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [showControls, setShowControls] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
+  const [duration, setDuration] = useState(0);
+
+  // Real video generation state
+  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
+  const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
+  const [videoProgress, setVideoProgress] = useState<VideoGenerationProgress | null>(null);
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const [ffmpegSupported, setFfmpegSupported] = useState<boolean | null>(null);
+
   // Handle various content structures from API
   const rawContent = output.content as Record<string, unknown>;
   const nestedContent = rawContent?.content as {
-    segments?: Array<{ title: string; narration: string; visualDescription: string; duration: string }>;
-    totalDuration?: string;
+    segments?: VideoSegment[];
+    totalDuration?: number;
+    videoUrl?: string;
+    audioUrl?: string;
+    thumbnailUrl?: string;
+    isActualVideo?: boolean;
   } | undefined;
 
-  // Try multiple paths to find video data
-  const segments = (rawContent?.segments as Array<{ title: string; narration: string; visualDescription: string; duration: string }>) || nestedContent?.segments || [];
-  const totalDuration = (rawContent?.totalDuration as string) || nestedContent?.totalDuration;
+  // Check if this is actual video content (with AI-generated images)
+  const isActualVideo = (rawContent?.isActualVideo as boolean) || nestedContent?.isActualVideo;
 
+  // Extract video data
+  const segments = (rawContent?.segments as VideoSegment[]) || nestedContent?.segments || [];
+  const totalDuration = (rawContent?.totalDuration as number) || nestedContent?.totalDuration || 0;
+  const audioUrl = (rawContent?.audioUrl as string) || nestedContent?.audioUrl;
+  const thumbnailUrl = (rawContent?.thumbnailUrl as string) || nestedContent?.thumbnailUrl;
+
+  // Check FFmpeg support on mount
+  useEffect(() => {
+    const checkSupport = async () => {
+      try {
+        const { isFFmpegSupported } = await import("@/lib/video/ffmpeg-video-generator");
+        setFfmpegSupported(isFFmpegSupported());
+      } catch {
+        setFfmpegSupported(false);
+      }
+    };
+    checkSupport();
+  }, []);
+
+  // Calculate segment timings
+  const segmentTimings = useMemo(() => {
+    let elapsed = 0;
+    return segments.map((segment) => {
+      const start = elapsed;
+      const duration = segment.duration || 5;
+      elapsed += duration;
+      return { start, end: elapsed, duration };
+    });
+  }, [segments]);
+
+  // Video style state
+  const [videoStyle, setVideoStyle] = useState<"enhanced" | "simple">("enhanced");
+
+  // Generate real video from images
+  const generateRealVideo = useCallback(async () => {
+    if (isGeneratingVideo || segments.length === 0) return;
+
+    setIsGeneratingVideo(true);
+    setVideoError(null);
+    setVideoProgress({ stage: "loading", progress: 0, message: "Starting video encoder..." });
+
+    try {
+      const { generateVideo, generateVideoSimple, initFFmpeg } = await import("@/lib/video/ffmpeg-video-generator");
+
+      // Initialize FFmpeg first
+      const initialized = await initFFmpeg((progress) => setVideoProgress(progress));
+      if (!initialized) {
+        throw new Error("Failed to initialize video encoder. Please try again.");
+      }
+
+      // Choose generation method based on style
+      const generateFn = videoStyle === "enhanced" ? generateVideo : generateVideoSimple;
+
+      // Generate video with style options
+      const result = await generateFn(
+        {
+          segments,
+          audioUrl,
+          totalDuration,
+          style: videoStyle === "enhanced" ? {
+            kenBurns: true,
+            transitions: "crossfade",
+            transitionDuration: 0.5,
+            showTitles: true,
+            showProgressBar: true,
+            resolution: "720p",
+          } : undefined,
+        },
+        (progress) => setVideoProgress(progress)
+      );
+
+      setGeneratedVideoUrl(result.videoUrl);
+      setVideoProgress({ stage: "complete", progress: 100, message: "Video ready!" });
+    } catch (error) {
+      console.error("Video generation failed:", error);
+      setVideoError(error instanceof Error ? error.message : "Video generation failed");
+      setVideoProgress({ stage: "error", progress: 0, message: "Failed to generate video" });
+    } finally {
+      setIsGeneratingVideo(false);
+    }
+  }, [segments, audioUrl, totalDuration, isGeneratingVideo, videoStyle]);
+
+  // Download the generated video
+  const downloadVideo = useCallback(() => {
+    if (!generatedVideoUrl) return;
+
+    const link = document.createElement("a");
+    link.href = generatedVideoUrl;
+    link.download = `${output.title.replace(/[^a-z0-9]/gi, "_")}.mp4`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [generatedVideoUrl, output.title]);
+
+  // Cleanup video URL on unmount
+  useEffect(() => {
+    return () => {
+      if (generatedVideoUrl) {
+        URL.revokeObjectURL(generatedVideoUrl);
+      }
+    };
+  }, [generatedVideoUrl]);
+
+  // Video player handlers
+  const handleVideoTimeUpdate = () => {
+    if (videoRef.current) {
+      setCurrentTime(videoRef.current.currentTime);
+      // Find current segment based on time
+      for (let i = 0; i < segmentTimings.length; i++) {
+        const timing = segmentTimings[i];
+        if (videoRef.current.currentTime >= timing.start && videoRef.current.currentTime < timing.end) {
+          if (currentSegment !== i) setCurrentSegment(i);
+          break;
+        }
+      }
+    }
+  };
+
+  const handleVideoLoadedMetadata = () => {
+    if (videoRef.current) {
+      setDuration(videoRef.current.duration);
+    }
+  };
+
+  const toggleVideoPlay = () => {
+    if (videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.pause();
+      } else {
+        videoRef.current.play();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  const handleVideoSeek = (time: number) => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = time;
+      setCurrentTime(time);
+    }
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  // Skip forward/backward
+  const skipVideo = (seconds: number) => {
+    if (videoRef.current) {
+      const newTime = Math.max(0, Math.min(duration, currentTime + seconds));
+      videoRef.current.currentTime = newTime;
+      setCurrentTime(newTime);
+    }
+  };
+
+  // If we have a generated real video, show the video player
+  if (generatedVideoUrl) {
+    return (
+      <div className="flex flex-col h-full">
+        {/* Video Player */}
+        <div className="relative bg-black aspect-video w-full">
+          <video
+            ref={videoRef}
+            src={generatedVideoUrl}
+            className="w-full h-full"
+            muted={isMuted}
+            onTimeUpdate={handleVideoTimeUpdate}
+            onLoadedMetadata={handleVideoLoadedMetadata}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+            onEnded={() => {
+              setIsPlaying(false);
+              setCurrentTime(0);
+              setCurrentSegment(0);
+            }}
+            onClick={toggleVideoPlay}
+          />
+
+          {/* Video Controls Overlay */}
+          <div
+            className={`absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent transition-opacity ${
+              showControls ? "opacity-100" : "opacity-0"
+            }`}
+            onMouseEnter={() => setShowControls(true)}
+            onMouseLeave={() => setShowControls(false)}
+          >
+            {/* Center Play/Pause */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <button
+                onClick={toggleVideoPlay}
+                className="p-4 bg-white/20 rounded-full backdrop-blur-sm hover:bg-white/30 transition-colors"
+              >
+                {isPlaying ? (
+                  <Pause className="w-12 h-12 text-white" />
+                ) : (
+                  <Play className="w-12 h-12 text-white ml-1" />
+                )}
+              </button>
+            </div>
+
+            {/* Bottom Controls */}
+            <div className="absolute bottom-0 left-0 right-0 p-4">
+              {/* Progress Bar */}
+              <div className="relative mb-3">
+                <input
+                  type="range"
+                  min={0}
+                  max={duration || 100}
+                  value={currentTime}
+                  onChange={(e) => handleVideoSeek(parseFloat(e.target.value))}
+                  className="w-full h-1 bg-white/30 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-pink-500 [&::-webkit-slider-thumb]:rounded-full"
+                />
+              </div>
+
+              {/* Control Buttons */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => skipVideo(-10)}
+                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                  >
+                    <SkipBack className="w-5 h-5 text-white" />
+                  </button>
+                  <button
+                    onClick={toggleVideoPlay}
+                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                  >
+                    {isPlaying ? (
+                      <Pause className="w-5 h-5 text-white" />
+                    ) : (
+                      <Play className="w-5 h-5 text-white" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => skipVideo(10)}
+                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                  >
+                    <SkipForward className="w-5 h-5 text-white" />
+                  </button>
+                  <button
+                    onClick={() => setIsMuted(!isMuted)}
+                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                  >
+                    {isMuted ? (
+                      <VolumeX className="w-5 h-5 text-white" />
+                    ) : (
+                      <Volume2 className="w-5 h-5 text-white" />
+                    )}
+                  </button>
+                  <span className="text-sm text-white ml-2">
+                    {formatTime(currentTime)} / {formatTime(duration)}
+                  </span>
+                </div>
+
+                <button
+                  onClick={downloadVideo}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-pink-500 hover:bg-pink-600 rounded-lg text-white text-sm font-medium transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                  Download MP4
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Current Segment Indicator */}
+          {segments[currentSegment] && (
+            <div className="absolute top-4 left-4 bg-black/70 backdrop-blur-sm rounded-lg px-3 py-2">
+              <p className="text-white text-sm font-medium">{segments[currentSegment].title}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Segment Timeline */}
+        <div className="p-4 bg-[#1a1a1a] border-t border-white/10">
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {segments.map((segment, index) => (
+              <button
+                key={index}
+                onClick={() => handleVideoSeek(segmentTimings[index]?.start || 0)}
+                className={`flex-shrink-0 w-24 rounded-lg overflow-hidden border-2 transition-all ${
+                  index === currentSegment
+                    ? "border-pink-500 scale-105"
+                    : "border-white/10 opacity-60 hover:opacity-100"
+                }`}
+              >
+                {segment.imageUrl ? (
+                  <img
+                    src={segment.imageUrl}
+                    alt={segment.title}
+                    className="w-full h-14 object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-14 bg-gradient-to-br from-pink-600/40 to-purple-600/40" />
+                )}
+                <div className="p-1 bg-black/60">
+                  <p className="text-[10px] text-white truncate">{segment.title}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Transcript */}
+        <div className="flex-1 overflow-auto p-4">
+          <h4 className="text-sm font-semibold text-white/60 uppercase tracking-wider mb-3">
+            Transcript
+          </h4>
+          <div className="space-y-3">
+            {segments.map((segment, index) => (
+              <div
+                key={index}
+                onClick={() => handleVideoSeek(segmentTimings[index]?.start || 0)}
+                className={`p-3 rounded-lg cursor-pointer transition-colors ${
+                  index === currentSegment
+                    ? "bg-pink-500/20 border border-pink-500/40"
+                    : "bg-white/5 hover:bg-white/10"
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs text-pink-400 font-medium">
+                    {formatTime(segmentTimings[index]?.start || 0)}
+                  </span>
+                  <span className="text-sm text-white font-medium">{segment.title}</span>
+                </div>
+                <p className="text-sm text-white/70">{segment.narration}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // If video generation is in progress, show progress
+  if (isGeneratingVideo || videoProgress?.stage === "loading" || videoProgress?.stage === "preparing" || videoProgress?.stage === "processing" || videoProgress?.stage === "encoding") {
+    return (
+      <div className="flex flex-col items-center justify-center h-full p-8">
+        <div className="w-full max-w-md">
+          {/* Progress Circle */}
+          <div className="relative w-32 h-32 mx-auto mb-6">
+            <svg className="w-32 h-32 transform -rotate-90">
+              <circle
+                cx="64"
+                cy="64"
+                r="56"
+                stroke="currentColor"
+                strokeWidth="8"
+                fill="none"
+                className="text-white/10"
+              />
+              <circle
+                cx="64"
+                cy="64"
+                r="56"
+                stroke="currentColor"
+                strokeWidth="8"
+                fill="none"
+                strokeDasharray={2 * Math.PI * 56}
+                strokeDashoffset={2 * Math.PI * 56 * (1 - (videoProgress?.progress || 0) / 100)}
+                className="text-pink-500 transition-all duration-300"
+                strokeLinecap="round"
+              />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-2xl font-bold text-white">{videoProgress?.progress || 0}%</span>
+            </div>
+          </div>
+
+          {/* Stage Indicator */}
+          <div className="text-center mb-4">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <Loader2 className="w-5 h-5 text-pink-500 animate-spin" />
+              <span className="text-lg font-medium text-white">
+                {videoProgress?.message || "Generating video..."}
+              </span>
+            </div>
+            <p className="text-sm text-white/60">
+              This may take a moment depending on video length
+            </p>
+          </div>
+
+          {/* Stage Steps */}
+          <div className="space-y-2">
+            {[
+              { stage: "loading", label: "Loading encoder" },
+              { stage: "preparing", label: "Preparing images" },
+              { stage: "processing", label: "Applying effects" },
+              { stage: "encoding", label: "Encoding video" },
+              { stage: "finalizing", label: "Finalizing" },
+            ].map(({ stage, label }) => {
+              const currentStage = videoProgress?.stage;
+              const stages = ["loading", "preparing", "processing", "encoding", "finalizing", "complete"];
+              const currentIndex = stages.indexOf(currentStage || "");
+              const stageIndex = stages.indexOf(stage);
+              const isComplete = currentIndex > stageIndex;
+              const isCurrent = currentStage === stage;
+
+              return (
+                <div key={stage} className="flex items-center gap-3">
+                  <div
+                    className={`w-6 h-6 rounded-full flex items-center justify-center ${
+                      isComplete
+                        ? "bg-green-500"
+                        : isCurrent
+                        ? "bg-pink-500"
+                        : "bg-white/10"
+                    }`}
+                  >
+                    {isComplete ? (
+                      <Check className="w-4 h-4 text-white" />
+                    ) : isCurrent ? (
+                      <Loader2 className="w-4 h-4 text-white animate-spin" />
+                    ) : (
+                      <div className="w-2 h-2 bg-white/30 rounded-full" />
+                    )}
+                  </div>
+                  <span
+                    className={`text-sm ${
+                      isComplete || isCurrent ? "text-white" : "text-white/40"
+                    }`}
+                  >
+                    {label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // If we have segments with images and FFmpeg is supported, show option to generate real video
+  if (isActualVideo && segments.length > 0 && segments.some((s) => s.imageUrl)) {
+    const currentSegmentData = segments[currentSegment];
+
+    return (
+      <div className="flex flex-col h-full">
+        {/* Generate Video Banner */}
+        {ffmpegSupported && !videoError && (
+          <div className="flex-shrink-0 bg-gradient-to-r from-pink-500/20 to-purple-500/20 border-b border-pink-500/30 p-4">
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-3">
+                <Film className="w-6 h-6 text-pink-400" />
+                <div>
+                  <p className="text-white font-medium">Generate Real Video</p>
+                  <p className="text-sm text-white/60">
+                    Compile images + audio into a downloadable MP4 file
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                {/* Video Style Toggle */}
+                <div className="flex bg-black/30 rounded-lg p-1">
+                  <button
+                    onClick={() => setVideoStyle("enhanced")}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                      videoStyle === "enhanced"
+                        ? "bg-pink-500 text-white"
+                        : "text-white/60 hover:text-white"
+                    }`}
+                  >
+                    Enhanced
+                  </button>
+                  <button
+                    onClick={() => setVideoStyle("simple")}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                      videoStyle === "simple"
+                        ? "bg-pink-500 text-white"
+                        : "text-white/60 hover:text-white"
+                    }`}
+                  >
+                    Fast
+                  </button>
+                </div>
+                <button
+                  onClick={generateRealVideo}
+                  disabled={isGeneratingVideo}
+                  className="flex items-center gap-2 px-4 py-2 bg-pink-500 hover:bg-pink-600 disabled:bg-pink-500/50 rounded-lg text-white font-medium transition-colors"
+                >
+                  <Video className="w-5 h-5" />
+                  Generate MP4
+                </button>
+              </div>
+            </div>
+            {videoStyle === "enhanced" && (
+              <p className="text-xs text-white/40 mt-2">
+                ✨ Ken Burns zoom/pan • Crossfade transitions • Title overlays • Progress bar
+              </p>
+            )}
+            {videoStyle === "simple" && (
+              <p className="text-xs text-white/40 mt-2">
+                ⚡ Faster generation • Basic slideshow • No effects
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Error message */}
+        {videoError && (
+          <div className="flex-shrink-0 bg-red-500/20 border-b border-red-500/30 p-4">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-red-400" />
+              <p className="text-red-300">{videoError}</p>
+              <button
+                onClick={() => {
+                  setVideoError(null);
+                  generateRealVideo();
+                }}
+                className="ml-auto px-3 py-1 bg-red-500/30 hover:bg-red-500/40 rounded text-red-200 text-sm"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* FFmpeg not supported message */}
+        {ffmpegSupported === false && (
+          <div className="flex-shrink-0 bg-yellow-500/20 border-b border-yellow-500/30 p-4">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-yellow-400" />
+              <div>
+                <p className="text-yellow-300">Real video generation requires special browser support.</p>
+                <p className="text-sm text-yellow-300/60">
+                  Your server needs CORS headers: Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Hidden audio element for slideshow narration */}
+        {audioUrl && (
+          <audio
+            ref={audioRef}
+            src={audioUrl}
+            preload="auto"
+            onTimeUpdate={() => {
+              if (audioRef.current) {
+                setCurrentTime(audioRef.current.currentTime);
+              }
+            }}
+            onEnded={() => {
+              setIsPlaying(false);
+              setCurrentSegment(0);
+              setCurrentTime(0);
+            }}
+          />
+        )}
+
+        {/* Slideshow Display Area (fallback) */}
+        <div
+          className="relative bg-black aspect-video w-full flex items-center justify-center overflow-hidden cursor-pointer"
+          onClick={() => {
+            if (audioRef.current) {
+              if (isPlaying) {
+                audioRef.current.pause();
+              } else {
+                audioRef.current.play();
+              }
+            }
+            setIsPlaying(!isPlaying);
+          }}
+          onMouseEnter={() => setShowControls(true)}
+          onMouseLeave={() => !isPlaying && setShowControls(true)}
+        >
+          {/* Current Segment Image */}
+          {currentSegmentData?.imageUrl ? (
+            <img
+              src={currentSegmentData.imageUrl}
+              alt={currentSegmentData.title}
+              className="w-full h-full object-cover transition-opacity duration-500"
+            />
+          ) : (
+            <div className="w-full h-full bg-gradient-to-br from-pink-600/40 to-purple-600/40 flex items-center justify-center">
+              <Video className="w-20 h-20 text-white/30" />
+            </div>
+          )}
+
+          {/* Segment Title Overlay */}
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-6">
+            <h3 className="text-white text-xl font-semibold mb-2">
+              {currentSegmentData?.title}
+            </h3>
+            <p className="text-white/80 text-sm line-clamp-2">
+              {currentSegmentData?.narration}
+            </p>
+          </div>
+
+          {/* Play/Pause Overlay */}
+          {showControls && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity">
+              <button className="p-4 bg-white/20 rounded-full backdrop-blur-sm hover:bg-white/30 transition-colors">
+                {isPlaying ? (
+                  <Pause className="w-12 h-12 text-white" />
+                ) : (
+                  <Play className="w-12 h-12 text-white ml-1" />
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* Progress Bar */}
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
+            <div
+              className="h-full bg-pink-500 transition-all duration-300"
+              style={{
+                width: `${totalDuration > 0 ? (currentTime / totalDuration) * 100 : 0}%`,
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Timeline with Segments */}
+        <div className="p-4 bg-[#1a1a1a] border-t border-white/10">
+          <div className="flex items-center justify-between text-sm text-white/60 mb-3">
+            <span>{formatTime(currentTime)}</span>
+            <span>{formatTime(totalDuration)}</span>
+          </div>
+
+          {/* Segment Thumbnails */}
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {segments.map((segment, index) => (
+              <button
+                key={index}
+                onClick={() => {
+                  setCurrentSegment(index);
+                  const timing = segmentTimings[index];
+                  if (timing && audioRef.current) {
+                    audioRef.current.currentTime = timing.start;
+                    setCurrentTime(timing.start);
+                  }
+                }}
+                className={`flex-shrink-0 w-24 rounded-lg overflow-hidden border-2 transition-all ${
+                  index === currentSegment
+                    ? "border-pink-500 scale-105"
+                    : "border-white/10 opacity-60 hover:opacity-100"
+                }`}
+              >
+                {segment.imageUrl ? (
+                  <img
+                    src={segment.imageUrl}
+                    alt={segment.title}
+                    className="w-full h-14 object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-14 bg-gradient-to-br from-pink-600/40 to-purple-600/40" />
+                )}
+                <div className="p-1 bg-black/60">
+                  <p className="text-[10px] text-white truncate">{segment.title}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Full Transcript */}
+        <div className="flex-1 overflow-auto p-4">
+          <h4 className="text-sm font-semibold text-white/60 uppercase tracking-wider mb-3">
+            Transcript
+          </h4>
+          <div className="space-y-3">
+            {segments.map((segment, index) => (
+              <div
+                key={index}
+                onClick={() => {
+                  setCurrentSegment(index);
+                  const timing = segmentTimings[index];
+                  if (timing && audioRef.current) {
+                    audioRef.current.currentTime = timing.start;
+                    setCurrentTime(timing.start);
+                  }
+                }}
+                className={`p-3 rounded-lg cursor-pointer transition-colors ${
+                  index === currentSegment
+                    ? "bg-pink-500/20 border border-pink-500/40"
+                    : "bg-white/5 hover:bg-white/10"
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs text-pink-400 font-medium">
+                    {formatTime(segmentTimings[index]?.start || 0)}
+                  </span>
+                  <span className="text-sm text-white font-medium">{segment.title}</span>
+                </div>
+                <p className="text-sm text-white/70">{segment.narration}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback: Show script-only view for old-style content
   return (
     <div className="p-6 space-y-6">
       <div className="bg-gradient-to-r from-pink-500/20 to-purple-500/20 rounded-2xl p-6">
         <div className="flex items-center gap-3 mb-4">
           <Video className="w-6 h-6 text-pink-400" />
           <h3 className="text-lg font-semibold text-white">Video Script</h3>
-          {totalDuration && (
+          {totalDuration > 0 && (
             <span className="text-sm text-white/50 ml-auto">
-              Total: {totalDuration}
+              Total: {formatTime(totalDuration)}
             </span>
           )}
         </div>
@@ -365,7 +1105,7 @@ function VideoOverviewViewer({ output }: { output: Output }) {
                   <h4 className="text-white font-medium">{segment.title}</h4>
                 </div>
                 {segment.duration && (
-                  <span className="text-sm text-white/40">{segment.duration}</span>
+                  <span className="text-sm text-white/40">{segment.duration}s</span>
                 )}
               </div>
 
@@ -377,14 +1117,16 @@ function VideoOverviewViewer({ output }: { output: Output }) {
                   <p className="text-white/80 leading-relaxed">{segment.narration}</p>
                 </div>
 
-                <div>
-                  <p className="text-xs text-purple-400 uppercase tracking-wider mb-1">
-                    Visual
-                  </p>
-                  <p className="text-white/60 text-sm italic">
-                    {segment.visualDescription}
-                  </p>
-                </div>
+                {segment.visualDescription && (
+                  <div>
+                    <p className="text-xs text-purple-400 uppercase tracking-wider mb-1">
+                      Visual
+                    </p>
+                    <p className="text-white/60 text-sm italic">
+                      {segment.visualDescription}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -392,7 +1134,7 @@ function VideoOverviewViewer({ output }: { output: Output }) {
       ) : (
         <div className="text-center py-12">
           <Video className="w-12 h-12 text-white/30 mx-auto mb-4" />
-          <p className="text-white/50">Video script is being generated...</p>
+          <p className="text-white/50">Video is being generated...</p>
         </div>
       )}
     </div>

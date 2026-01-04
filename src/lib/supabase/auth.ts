@@ -40,21 +40,31 @@ export async function getUserFromToken(): Promise<User | null> {
     const authHeader = headersList.get('authorization')
 
     if (!authHeader?.startsWith('Bearer ')) {
+      console.log('[Auth] No Bearer token found in request')
       return null
     }
 
     const token = authHeader.substring(7)
+    console.log('[Auth] Validating Bearer token, length:', token.length)
 
     // Use admin client to verify the token
     const supabase = await createAdminClient()
     const { data: { user }, error } = await supabase.auth.getUser(token)
 
-    if (error || !user) {
+    if (error) {
+      console.error('[Auth] Token validation error:', error.message)
       return null
     }
 
+    if (!user) {
+      console.log('[Auth] Token valid but no user returned')
+      return null
+    }
+
+    console.log('[Auth] Token validated for user:', user.id)
     return user
-  } catch {
+  } catch (error) {
+    console.error('[Auth] getUserFromToken error:', error)
     return null
   }
 }
@@ -114,6 +124,7 @@ export async function getOrCreatePrismaUser(supabaseUser: User) {
         name: supabaseUser.user_metadata?.full_name || supabaseUser.user_metadata?.name || null,
         image: supabaseUser.user_metadata?.avatar_url || supabaseUser.user_metadata?.picture || null,
         emailVerified: supabaseUser.email_confirmed_at ? new Date(supabaseUser.email_confirmed_at) : null,
+        updatedAt: new Date(),
       },
     })
   } else if (user.id !== supabaseUser.id) {

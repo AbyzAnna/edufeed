@@ -48,6 +48,8 @@ export default function VideoFeed({ initialVideos }: VideoFeedProps) {
 
   // Reset videos when topic changes
   useEffect(() => {
+    let isMounted = true;
+
     const fetchVideos = async () => {
       setIsLoading(true);
       try {
@@ -55,16 +57,24 @@ export default function VideoFeed({ initialVideos }: VideoFeedProps) {
           ? `/api/videos?topic=${encodeURIComponent(topic)}`
           : "/api/videos";
         const res = await fetch(url);
+        if (!res.ok) {
+          throw new Error(`HTTP error: ${res.status}`);
+        }
         const newVideos = await res.json();
-        setVideos(newVideos);
-        setActiveIndex(0);
-        if (containerRef.current) {
-          containerRef.current.scrollTop = 0;
+        // Only update state if component is still mounted
+        if (isMounted) {
+          setVideos(newVideos);
+          setActiveIndex(0);
+          if (containerRef.current) {
+            containerRef.current.scrollTop = 0;
+          }
         }
       } catch (error) {
         console.error("Error fetching videos:", error);
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
@@ -74,6 +84,10 @@ export default function VideoFeed({ initialVideos }: VideoFeedProps) {
     } else if (initialVideos.length > 0) {
       setVideos(initialVideos);
     }
+
+    return () => {
+      isMounted = false;
+    };
   }, [topic, initialVideos]);
 
   const loadMoreVideos = useCallback(async () => {
@@ -87,8 +101,11 @@ export default function VideoFeed({ initialVideos }: VideoFeedProps) {
         url += `&topic=${encodeURIComponent(topic)}`;
       }
       const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`HTTP error: ${res.status}`);
+      }
       const newVideos = await res.json();
-      if (newVideos.length > 0) {
+      if (Array.isArray(newVideos) && newVideos.length > 0) {
         setVideos((prev) => [...prev, ...newVideos]);
       }
     } catch (error) {

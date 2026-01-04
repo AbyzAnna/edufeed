@@ -78,8 +78,53 @@ export async function POST(request: NextRequest) {
       generateFromSource = true,
     } = body;
 
+    // Input validation
+    const validDifficulties = ["EASY", "MEDIUM", "HARD"];
+    if (!validDifficulties.includes(difficulty)) {
+      return NextResponse.json(
+        { error: `Invalid difficulty. Must be one of: ${validDifficulties.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    // Validate questionCount (must be between 1 and 50)
+    const numQuestionCount = typeof questionCount === "number" ? questionCount : parseInt(questionCount, 10);
+    if (isNaN(numQuestionCount) || numQuestionCount < 1 || numQuestionCount > 50) {
+      return NextResponse.json(
+        { error: "Question count must be between 1 and 50" },
+        { status: 400 }
+      );
+    }
+
+    // Validate title length if provided
+    if (title && (typeof title !== "string" || title.length > 200)) {
+      return NextResponse.json(
+        { error: "Title must be 200 characters or less" },
+        { status: 400 }
+      );
+    }
+
+    // Validate description length if provided
+    if (description && (typeof description !== "string" || description.length > 1000)) {
+      return NextResponse.json(
+        { error: "Description must be 1000 characters or less" },
+        { status: 400 }
+      );
+    }
+
+    // Validate timeLimit if provided (must be positive number in seconds)
+    if (timeLimit !== undefined && timeLimit !== null) {
+      const numTimeLimit = typeof timeLimit === "number" ? timeLimit : parseInt(timeLimit, 10);
+      if (isNaN(numTimeLimit) || numTimeLimit < 30 || numTimeLimit > 7200) {
+        return NextResponse.json(
+          { error: "Time limit must be between 30 seconds and 2 hours" },
+          { status: 400 }
+        );
+      }
+    }
+
     let sourceContent = "";
-    let sourceTitle = title || "New Quiz";
+    let sourceTitle = title?.trim() || "New Quiz";
     let source = null;
 
     if (sourceId) {
@@ -112,6 +157,7 @@ export async function POST(request: NextRequest) {
           description || (source ? `Quiz generated from ${source.title}` : null),
         difficulty,
         timeLimit: timeLimit || null,
+        updatedAt: new Date(),
       },
     });
 
@@ -121,7 +167,7 @@ export async function POST(request: NextRequest) {
         const generatedQuestions = await generateQuizQuestions(
           sourceContent,
           sourceTitle,
-          questionCount,
+          numQuestionCount,
           difficulty
         );
 

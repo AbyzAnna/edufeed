@@ -29,26 +29,19 @@ export async function createClient() {
 }
 
 // Admin client with service role key for server-side operations
+// Used for validating tokens - does NOT need cookies
 export async function createAdminClient() {
-  const cookieStore = await cookies()
+  // Use createClient from @supabase/supabase-js directly for admin operations
+  // This avoids issues with cookies when validating Bearer tokens from mobile apps
+  const { createClient } = await import('@supabase/supabase-js')
 
-  return createServerClient(
+  return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
-          } catch {
-            // Ignore errors from Server Components
-          }
-        },
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
       },
     }
   )

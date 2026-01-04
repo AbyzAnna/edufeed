@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
         imageUrl: feedData.imageUrl || null,
         author: feedData.author || null,
         lastFetched: new Date(),
+        updatedAt: new Date(),
         PodcastEpisode: {
           create: feedData.episodes.slice(0, 50).map((ep) => ({
             id: crypto.randomUUID(),
@@ -102,6 +103,7 @@ export async function POST(request: NextRequest) {
             audioUrl: ep.audioUrl,
             duration: ep.duration || null,
             publishedAt: ep.publishedAt || null,
+            updatedAt: new Date(),
           })),
         },
       },

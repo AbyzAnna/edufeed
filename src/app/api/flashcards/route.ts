@@ -107,6 +107,7 @@ export async function POST(request: NextRequest) {
     // Create the deck
     const deck = await prisma.deck.create({
       data: {
+        id: crypto.randomUUID(),
         userId: session.user.id,
         sourceId: sourceId || null,
         title: sourceTitle,
@@ -114,6 +115,7 @@ export async function POST(request: NextRequest) {
           description ||
           (source ? `Flashcards from ${source.title}` : null),
         color: color || "#6366f1", // Default purple
+        updatedAt: new Date(),
       },
     });
 
@@ -130,10 +132,12 @@ export async function POST(request: NextRequest) {
         if (generatedCards.length > 0) {
           await prisma.flashcard.createMany({
             data: generatedCards.map((card) => ({
+              id: crypto.randomUUID(),
               deckId: deck.id,
               front: card.front,
               back: card.back,
               hint: card.hint,
+              updatedAt: new Date(),
             })),
           });
         }

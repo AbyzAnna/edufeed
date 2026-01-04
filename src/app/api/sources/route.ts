@@ -4,7 +4,7 @@ import { storeDocumentEmbeddings } from "@/lib/workers-client";
 import { createClient } from "@/lib/supabase/server";
 import { getOrCreatePrismaUser } from "@/lib/supabase/auth";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -15,6 +15,12 @@ export async function GET() {
 
     // Sync Supabase user with Prisma database (creates user if not exists)
     await getOrCreatePrismaUser(user);
+
+    // Parse pagination parameters with reasonable defaults and limits
+    const { searchParams } = new URL(request.url);
+    const cursor = searchParams.get("cursor");
+    const limitParam = parseInt(searchParams.get("limit") || "50", 10);
+    const limit = Math.min(Math.max(1, limitParam), 100); // Cap at 100 max
 
     const sources = await prisma.source.findMany({
       where: {
@@ -31,14 +37,29 @@ export async function GET() {
           orderBy: {
             createdAt: "desc",
           },
+          take: 5, // Limit nested feed items
         },
       },
       orderBy: {
         createdAt: "desc",
       },
+      take: limit + 1, // Fetch one extra to detect if there's more
+      ...(cursor && {
+        cursor: { id: cursor },
+        skip: 1, // Skip the cursor itself
+      }),
     });
 
-    return NextResponse.json(sources);
+    // Check if there are more items
+    const hasMore = sources.length > limit;
+    const items = hasMore ? sources.slice(0, limit) : sources;
+    const nextCursor = hasMore && items.length > 0 ? items[items.length - 1].id : null;
+
+    return NextResponse.json({
+      sources: items,
+      nextCursor,
+      hasMore,
+    });
   } catch (error) {
     console.error("Error fetching sources:", error);
     return NextResponse.json(
@@ -72,12 +93,14 @@ export async function POST(request: NextRequest) {
 
     const source = await prisma.source.create({
       data: {
+        id: crypto.randomUUID(),
         userId: user.id,
         type,
         title,
         content,
         originalUrl,
         fileUrl,
+        updatedAt: new Date(),
       },
     });
 

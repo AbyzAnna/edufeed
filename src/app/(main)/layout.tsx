@@ -1,5 +1,6 @@
 import Navbar from "@/components/layout/Navbar";
 import BottomNav from "@/components/layout/BottomNav";
+import GlobalMusicPlayer from "@/components/music/GlobalMusicPlayer";
 
 export default function MainLayout({
   children,
@@ -11,6 +12,7 @@ export default function MainLayout({
       <Navbar />
       <main className="md:pt-16 pb-20 md:pb-0">{children}</main>
       <BottomNav />
+      <GlobalMusicPlayer />
     </div>
   );
 }

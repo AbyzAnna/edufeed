@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { sendWelcomeEmail } from "@/lib/email/sendgrid";
 import prisma from "@/lib/prisma";
 import crypto from "crypto";
+import { rateLimiters } from "@/lib/rate-limit";
 
 // Create Supabase admin client
 const supabaseAdmin = createClient(
@@ -32,6 +33,18 @@ export async function POST(request: NextRequest) {
     // Normalize email
     const normalizedEmail = email.toLowerCase().trim();
 
+    // Rate limit by IP and email using shared rate limiter
+    const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown";
+    const rateLimitKey = `${ip}:${normalizedEmail}`;
+    const rateLimitResult = rateLimiters.emailVerification(rateLimitKey);
+
+    if (!rateLimitResult.allowed) {
+      return NextResponse.json(
+        { error: "Too many verification attempts. Please try again in 5 minutes." },
+        { status: 429 }
+      );
+    }
+
     // Hash the token to compare with stored hash
     const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
@@ -53,31 +66,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find the Supabase user
-    const { data: userData, error: userError } = await supabaseAdmin.auth.admin.listUsers();
+    // Find user in Prisma first (fast, indexed query) to get their Supabase ID
+    const prismaUser = await prisma.user.findFirst({
+      where: { email: normalizedEmail },
+      select: { id: true, name: true },
+    });
 
-    if (userError) {
-      console.error("Error fetching users:", userError);
-      return NextResponse.json(
-        { error: "An error occurred. Please try again." },
-        { status: 500 }
-      );
-    }
-
-    const supabaseUser = userData.users.find(
-      (u) => u.email?.toLowerCase() === normalizedEmail
-    );
-
-    if (!supabaseUser) {
+    if (!prismaUser) {
       return NextResponse.json(
         { error: "User not found. Please sign up again." },
         { status: 404 }
       );
     }
 
+    // Verify user exists in Supabase using ID (O(1) lookup instead of listing all users)
+    const { data: supabaseUser, error: userError } = await supabaseAdmin.auth.admin.getUserById(prismaUser.id);
+
+    if (userError || !supabaseUser?.user) {
+      console.error("Error fetching Supabase user:", userError);
+      return NextResponse.json(
+        { error: "An error occurred. Please try again." },
+        { status: 500 }
+      );
+    }
+
     // Confirm the user's email in Supabase
     const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
-      supabaseUser.id,
+      supabaseUser.user.id,
       { email_confirm: true }
     );
 
@@ -89,25 +104,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Update Prisma user and delete token in a single transaction
-    let userName: string | null = null;
+    // Update Prisma user and delete token (we already have user name from earlier query)
+    const userName = prismaUser.name;
 
     try {
       await prisma.$transaction(async (tx) => {
         // Update user's emailVerified field
-        const updatedUser = await tx.user.update({
+        await tx.user.update({
           where: { email: normalizedEmail },
           data: {
             emailVerified: new Date(),
             updatedAt: new Date(),
           },
-          select: { name: true },
         });
-        userName = updatedUser.name;
 
-        // Delete the used verification token
-        await tx.emailVerificationToken.delete({
-          where: { id: verificationToken.id },
+        // Delete all verification tokens for this email
+        await tx.emailVerificationToken.deleteMany({
+          where: { email: normalizedEmail },
         });
       });
     } catch (prismaError) {
@@ -116,8 +129,8 @@ export async function POST(request: NextRequest) {
 
       // Try to delete token separately
       try {
-        await prisma.emailVerificationToken.delete({
-          where: { id: verificationToken.id },
+        await prisma.emailVerificationToken.deleteMany({
+          where: { email: normalizedEmail },
         });
       } catch (deleteError) {
         console.error("Error deleting verification token:", deleteError);

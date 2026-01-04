@@ -200,7 +200,7 @@ export default function SourcesPanel({
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       {/* Header */}
       <div className="flex-shrink-0 p-4 border-b border-white/5">
         <h2 className="text-sm font-semibold text-white mb-3">Sources</h2>
@@ -259,7 +259,7 @@ export default function SourcesPanel({
       )}
 
       {/* Source List */}
-      <div className="flex-1 overflow-y-auto p-2">
+      <div className="flex-1 min-h-0 overflow-y-auto p-2">
         {filteredSources.length > 0 ? (
           <div className="space-y-0.5">
             {filteredSources.map((source) => (

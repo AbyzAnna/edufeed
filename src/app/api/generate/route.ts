@@ -14,9 +14,18 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { sourceId, generationType = "SLIDESHOW" } = body;
 
-    if (!sourceId) {
+    if (!sourceId || typeof sourceId !== "string") {
       return NextResponse.json(
         { error: "Source ID is required" },
+        { status: 400 }
+      );
+    }
+
+    // Validate generation type against allowed values
+    const validGenerationTypes = ["SLIDESHOW", "ANIMATION", "TALKING_HEAD", "SUMMARY", "QUIZ"];
+    if (!validGenerationTypes.includes(generationType)) {
+      return NextResponse.json(
+        { error: `Invalid generation type. Must be one of: ${validGenerationTypes.join(", ")}` },
         { status: 400 }
       );
     }
@@ -36,11 +45,13 @@ export async function POST(request: NextRequest) {
     // Create video record with PENDING status
     const video = await prisma.video.create({
       data: {
+        id: crypto.randomUUID(),
         userId: session.user.id,
         sourceId,
         title: source.title,
         status: "PENDING",
         generationType,
+        updatedAt: new Date(),
       },
     });
 

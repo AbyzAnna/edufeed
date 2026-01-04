@@ -3,17 +3,12 @@ import { createClient } from "@supabase/supabase-js";
 import { sendPasswordResetEmail } from "@/lib/email/sendgrid";
 import prisma from "@/lib/prisma";
 import crypto from "crypto";
+import { getCorsHeaders, handleCorsPreflightRequest } from "@/lib/cors";
+import { rateLimiters } from "@/lib/rate-limit";
 
-// CORS headers for mobile app access
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
-
-// Handle preflight requests
-export async function OPTIONS() {
-  return NextResponse.json({}, { headers: corsHeaders });
+// Handle preflight requests with secure CORS
+export async function OPTIONS(request: NextRequest) {
+  return handleCorsPreflightRequest(request);
 }
 
 // Create Supabase admin client
@@ -28,30 +23,8 @@ const supabaseAdmin = createClient(
   }
 );
 
-// Rate limiting map (in production, use Redis)
-const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
-
-function checkRateLimit(identifier: string): boolean {
-  const now = Date.now();
-  const windowMs = 15 * 60 * 1000; // 15 minutes
-  const maxRequests = 3; // Max 3 requests per 15 minutes
-
-  const record = rateLimitMap.get(identifier);
-
-  if (!record || now > record.resetTime) {
-    rateLimitMap.set(identifier, { count: 1, resetTime: now + windowMs });
-    return true;
-  }
-
-  if (record.count >= maxRequests) {
-    return false;
-  }
-
-  record.count++;
-  return true;
-}
-
 export async function POST(request: NextRequest) {
+  const corsHeaders = getCorsHeaders(request);
   try {
     const body = await request.json();
     const { email } = body;
@@ -66,11 +39,21 @@ export async function POST(request: NextRequest) {
     // Normalize email
     const normalizedEmail = email.toLowerCase().trim();
 
-    // Rate limit by IP and email
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(normalizedEmail)) {
+      return NextResponse.json(
+        { error: "Invalid email format" },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    // Rate limit by IP and email using shared rate limiter with memory leak prevention
     const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown";
     const rateLimitKey = `${ip}:${normalizedEmail}`;
+    const rateLimitResult = rateLimiters.passwordReset(rateLimitKey);
 
-    if (!checkRateLimit(rateLimitKey)) {
+    if (!rateLimitResult.allowed) {
       return NextResponse.json(
         { error: "Too many password reset requests. Please try again in 15 minutes." },
         { status: 429, headers: corsHeaders }
@@ -87,33 +70,32 @@ export async function POST(request: NextRequest) {
       { headers: corsHeaders }
     );
 
-    // Check if user exists in Supabase
-    const { data: userData, error: userError } = await supabaseAdmin.auth.admin.listUsers();
+    // First check Prisma for user existence (fast, indexed query)
+    const prismaUser = await prisma.user.findFirst({
+      where: { email: normalizedEmail },
+      select: { id: true, name: true },
+    });
 
-    if (userError) {
-      console.error("Error fetching users:", userError);
-      // Still return success to prevent enumeration
-      return successResponse;
-    }
-
-    const supabaseUser = userData.users.find(
-      (u) => u.email?.toLowerCase() === normalizedEmail
-    );
-
-    if (!supabaseUser) {
+    if (!prismaUser) {
       // User doesn't exist, but return success to prevent enumeration
       console.log(`Password reset requested for non-existent email: ${normalizedEmail}`);
       return successResponse;
     }
 
-    // Check if user signed up with OAuth only (no password)
-    const identities = supabaseUser.identities || [];
+    // Check if user signed up with OAuth only using Supabase (O(1) lookup by ID)
+    const { data: supabaseUser, error: userError } = await supabaseAdmin.auth.admin.getUserById(prismaUser.id);
+
+    if (userError || !supabaseUser?.user) {
+      console.error("Error fetching Supabase user:", userError);
+      return successResponse;
+    }
+
+    const identities = supabaseUser.user.identities || [];
     const hasEmailIdentity = identities.some((i) => i.provider === "email");
 
     if (!hasEmailIdentity && identities.length > 0) {
       // User signed up with OAuth, they should use that provider
       console.log(`Password reset requested for OAuth-only user: ${normalizedEmail}`);
-      // Still return success to prevent enumeration
       return successResponse;
     }
 
@@ -122,11 +104,11 @@ export async function POST(request: NextRequest) {
     const resetTokenHash = crypto.createHash("sha256").update(resetToken).digest("hex");
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
 
-    // Store reset token in database using transaction to prevent race conditions
-    let userName: string | null = null;
+    // Store reset token in database (we already have user name)
+    const userName = prismaUser.name;
 
     try {
-      const result = await prisma.$transaction(async (tx) => {
+      await prisma.$transaction(async (tx) => {
         // First, invalidate any existing tokens for this user
         await tx.passwordResetToken.deleteMany({
           where: { email: normalizedEmail },
@@ -135,25 +117,15 @@ export async function POST(request: NextRequest) {
         // Create new token
         await tx.passwordResetToken.create({
           data: {
+            id: crypto.randomUUID(),
             email: normalizedEmail,
             token: resetTokenHash,
             expiresAt,
           },
         });
-
-        // Get user name for personalization (within same transaction)
-        const prismaUser = await tx.user.findFirst({
-          where: { email: normalizedEmail },
-          select: { name: true },
-        });
-
-        return prismaUser;
       });
-
-      userName = result?.name || null;
     } catch (dbError) {
       console.error("Database error creating reset token:", dbError);
-      // Still return success to prevent enumeration
       return successResponse;
     }
 

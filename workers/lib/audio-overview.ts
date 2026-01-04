@@ -206,32 +206,45 @@ async function synthesizeSpeech(
 
       // Use Cloudflare Workers AI MeloTTS for text-to-speech
       // MeloTTS supports: 'en' (English), 'fr' (French)
+      // IMPORTANT: MeloTTS uses 'prompt' parameter, NOT 'text'
       const ttsResponse = await env.AI.run('@cf/myshell-ai/melotts', {
-        text: segment.text,
+        prompt: segment.text,
         lang: 'en', // English language
       });
 
-      // MeloTTS returns audio data as ArrayBuffer
+      // MeloTTS returns { audio: base64string } for MP3 format
+      // Handle both new format (base64 string) and legacy format (ArrayBuffer)
       if (ttsResponse && typeof ttsResponse === 'object') {
-        // Handle the response based on MeloTTS output format
-        let audioBuffer: ArrayBuffer;
+        let audioBuffer: ArrayBuffer | null = null;
 
-        if (ttsResponse instanceof ArrayBuffer) {
+        // New MeloTTS format: { audio: base64string } - MP3 format
+        if ('audio' in ttsResponse && typeof ttsResponse.audio === 'string') {
+          // Decode base64 string to ArrayBuffer
+          const base64 = ttsResponse.audio as string;
+          const binaryString = atob(base64);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          audioBuffer = bytes.buffer;
+        } else if (ttsResponse instanceof ArrayBuffer) {
+          // Legacy format: direct ArrayBuffer
           audioBuffer = ttsResponse;
         } else if (ArrayBuffer.isView(ttsResponse)) {
+          // Legacy format: TypedArray view
           audioBuffer = ttsResponse.buffer.slice(
             ttsResponse.byteOffset,
             ttsResponse.byteOffset + ttsResponse.byteLength
           );
-        } else if ('audio' in ttsResponse && ttsResponse.audio) {
-          // Some TTS models return { audio: ArrayBuffer }
+        } else if ('audio' in ttsResponse && ttsResponse.audio instanceof ArrayBuffer) {
+          // Legacy format: { audio: ArrayBuffer }
           audioBuffer = ttsResponse.audio as ArrayBuffer;
         } else {
-          console.warn('Unexpected TTS response format:', typeof ttsResponse);
+          console.warn('Unexpected TTS response format:', typeof ttsResponse, Object.keys(ttsResponse));
           continue;
         }
 
-        if (audioBuffer.byteLength > 0) {
+        if (audioBuffer && audioBuffer.byteLength > 0) {
           audioChunks.push(audioBuffer);
         }
       }

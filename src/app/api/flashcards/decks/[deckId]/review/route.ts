@@ -34,13 +34,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Verify card belongs to deck and user has access
+    // Verify card belongs to deck
     const card = await prisma.flashcard.findFirst({
       where: {
         id: cardId,
         deckId,
+      },
+      include: {
         Deck: {
-          OR: [{ userId: session.user.id }, { isPublic: true }],
+          select: {
+            userId: true,
+            isPublic: true,
+          },
         },
       },
     });
@@ -49,43 +54,109 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Card not found" }, { status: 404 });
     }
 
-    // Calculate new SM-2 values
-    const sm2Result = calculateSM2({
-      quality,
-      easeFactor: card.easeFactor,
-      interval: card.interval,
-      repetitions: card.repetitions,
-    });
+    // Check if user has access to the deck
+    const isOwner = card.Deck.userId === session.user.id;
+    const isPublic = card.Deck.isPublic;
 
-    // Update card with new values
-    const updatedCard = await prisma.flashcard.update({
-      where: { id: cardId },
-      data: {
-        easeFactor: sm2Result.easeFactor,
-        interval: sm2Result.interval,
-        repetitions: sm2Result.repetitions,
-        nextReviewDate: sm2Result.nextReviewDate,
-        lastReviewDate: new Date(),
-      },
-    });
+    if (!isOwner && !isPublic) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
 
-    // Record the review
-    await prisma.flashcardReview.create({
-      data: {
-        id: crypto.randomUUID(),
-        flashcardId: cardId,
-        userId: session.user.id,
+    // SECURITY FIX: Only deck owners can modify the original card's SM2 values
+    // Non-owners reviewing public decks get their progress tracked separately
+    // without modifying the original card
+    if (isOwner) {
+      // Owner: Update the card's SM2 values directly
+      const sm2Result = calculateSM2({
         quality,
-        responseMs,
-      },
-    });
+        easeFactor: card.easeFactor,
+        interval: card.interval,
+        repetitions: card.repetitions,
+      });
 
-    return NextResponse.json({
-      success: true,
-      card: updatedCard,
-      nextReviewDate: sm2Result.nextReviewDate,
-      interval: sm2Result.interval,
-    });
+      const updatedCard = await prisma.flashcard.update({
+        where: { id: cardId },
+        data: {
+          easeFactor: sm2Result.easeFactor,
+          interval: sm2Result.interval,
+          repetitions: sm2Result.repetitions,
+          nextReviewDate: sm2Result.nextReviewDate,
+          lastReviewDate: new Date(),
+        },
+      });
+
+      // Record the review
+      await prisma.flashcardReview.create({
+        data: {
+          id: crypto.randomUUID(),
+          flashcardId: cardId,
+          userId: session.user.id,
+          quality,
+          responseMs,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        card: updatedCard,
+        nextReviewDate: sm2Result.nextReviewDate,
+        interval: sm2Result.interval,
+      });
+    } else {
+      // Non-owner viewing public deck: Track review separately without modifying card
+      // Check for existing user-specific review data
+      const lastReview = await prisma.flashcardReview.findFirst({
+        where: {
+          flashcardId: cardId,
+          userId: session.user.id,
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      // Calculate SM2 based on user's personal progress (not the card's values)
+      // Use defaults if this is their first review of this card
+      const userEaseFactor = lastReview?.easeFactor ?? 2.5;
+      const userInterval = lastReview?.interval ?? 1;
+      const userRepetitions = lastReview?.repetitions ?? 0;
+
+      const sm2Result = calculateSM2({
+        quality,
+        easeFactor: userEaseFactor,
+        interval: userInterval,
+        repetitions: userRepetitions,
+      });
+
+      // Record the review with user-specific SM2 values
+      await prisma.flashcardReview.create({
+        data: {
+          id: crypto.randomUUID(),
+          flashcardId: cardId,
+          userId: session.user.id,
+          quality,
+          responseMs,
+          // Store user-specific SM2 values in the review record
+          easeFactor: sm2Result.easeFactor,
+          interval: sm2Result.interval,
+          repetitions: sm2Result.repetitions,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        card: {
+          ...card,
+          // Return user-specific values, not the card's original values
+          easeFactor: sm2Result.easeFactor,
+          interval: sm2Result.interval,
+          repetitions: sm2Result.repetitions,
+          nextReviewDate: sm2Result.nextReviewDate,
+        },
+        nextReviewDate: sm2Result.nextReviewDate,
+        interval: sm2Result.interval,
+        isPublicDeck: true,
+        message: "Your progress is tracked separately for this public deck",
+      });
+    }
   } catch (error) {
     console.error("Error recording review:", error);
     return NextResponse.json(

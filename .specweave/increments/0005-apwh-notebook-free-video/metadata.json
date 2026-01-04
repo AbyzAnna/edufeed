@@ -1,0 +1,12 @@
+{
+  "id": "0005-apwh-notebook-free-video",
+  "title": "APWH Notebook with FREE Video Generation",
+  "status": "completed",
+  "createdAt": "2026-01-03T00:00:00.000Z",
+  "updatedAt": "2026-01-03T20:05:00.000Z",
+  "completedAt": "2026-01-03T20:05:00.000Z",
+  "priority": "high",
+  "estimatedComplexity": "high",
+  "tags": ["notebook", "video-generation", "free", "apwh", "testing"],
+  "dependencies": []
+}

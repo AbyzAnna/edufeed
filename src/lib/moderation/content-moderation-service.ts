@@ -252,6 +252,7 @@ export class ContentModerationService {
 
     return prisma.contentModerationReport.create({
       data: {
+        id: crypto.randomUUID(),
         contentType: data.contentType,
         contentId: data.contentId,
         userId: data.userId,
@@ -262,6 +263,7 @@ export class ContentModerationService {
         confidenceScore: data.confidenceScore,
         aiModelVersion: data.aiModelVersion,
         resolvedAt: decision ? new Date() : null,
+        updatedAt: new Date(),
       },
     });
   }
@@ -281,6 +283,7 @@ export class ContentModerationService {
     await prisma.userModerationHistory.upsert({
       where: { userId },
       create: {
+        id: crypto.randomUUID(),
         userId,
         totalReports: 1,
         approvedCount: isApproved ? 1 : 0,
@@ -288,12 +291,14 @@ export class ContentModerationService {
         warningCount: 0,
         lastViolation: hasViolations ? new Date() : null,
         currentStatus: UserModerationStatus.GOOD_STANDING,
+        updatedAt: new Date(),
       },
       update: {
         totalReports: { increment: 1 },
         approvedCount: isApproved ? { increment: 1 } : undefined,
         rejectedCount: isRejected ? { increment: 1 } : undefined,
         lastViolation: hasViolations ? new Date() : undefined,
+        updatedAt: new Date(),
       },
     });
 
@@ -347,31 +352,36 @@ export class ContentModerationService {
 
   /**
    * Check if user is muted
+   * Uses atomic update to prevent TOCTOU race condition
    */
   async isUserMuted(userId: string): Promise<boolean> {
-    const history = await prisma.userModerationHistory.findUnique({
-      where: { userId },
+    // Use updateMany with conditional where to atomically check and update
+    // This prevents race condition where multiple requests could try to
+    // reset the mute status simultaneously
+    const resetResult = await prisma.userModerationHistory.updateMany({
+      where: {
+        userId,
+        currentStatus: UserModerationStatus.MUTED,
+        muteExpiresAt: { lt: new Date() }, // Only update if expired
+      },
+      data: {
+        currentStatus: UserModerationStatus.GOOD_STANDING,
+        muteExpiresAt: null,
+      },
     });
 
-    if (!history) return false;
-
-    if (history.currentStatus === UserModerationStatus.MUTED) {
-      // Check if mute has expired
-      if (history.muteExpiresAt && history.muteExpiresAt < new Date()) {
-        // Mute expired, reset status
-        await prisma.userModerationHistory.update({
-          where: { userId },
-          data: {
-            currentStatus: UserModerationStatus.GOOD_STANDING,
-            muteExpiresAt: null,
-          },
-        });
-        return false;
-      }
-      return true;
+    // If we reset the mute (count > 0), the user is no longer muted
+    if (resetResult.count > 0) {
+      return false;
     }
 
-    return false;
+    // Now check current status
+    const history = await prisma.userModerationHistory.findUnique({
+      where: { userId },
+      select: { currentStatus: true },
+    });
+
+    return history?.currentStatus === UserModerationStatus.MUTED;
   }
 
   /**

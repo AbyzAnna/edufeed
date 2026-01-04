@@ -114,28 +114,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Title is required" }, { status: 400 });
     }
 
-    // Generate unique room code
-    let code: string;
-    let isUnique = false;
-    let attempts = 0;
-
-    do {
-      code = generateRoomCode();
-      const existing = await prisma.studyRoom.findUnique({
-        where: { code },
-      });
-      isUnique = !existing;
-      attempts++;
-    } while (!isUnique && attempts < 10);
-
-    if (!isUnique) {
-      return NextResponse.json(
-        { error: "Failed to generate room code" },
-        { status: 500 }
-      );
-    }
-
-    // Verify notebook access if provided
+    // Verify notebook access if provided (do this first, before room creation)
     if (notebookId) {
       const notebook = await prisma.notebook.findFirst({
         where: {
@@ -159,56 +138,85 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Create room
-    const room = await prisma.studyRoom.create({
-      data: {
-        id: crypto.randomUUID(),
-        hostId: session.user.id,
-        title,
-        description,
-        code: code!,
-        notebookId,
-        isPrivate: isPrivate || false,
-        maxParticipants: maxParticipants || 10,
-        scheduledFor: scheduledFor ? new Date(scheduledFor) : null,
-        settings: settings || {
-          allowAudio: true,
-          allowVideo: true,
-          allowChat: true,
-          allowAnnotations: true,
-        },
-        // Add host as participant
-        StudyRoomParticipant: {
-          create: {
+    // Use retry loop for room creation to handle race condition on unique code
+    // This prevents the TOCTOU vulnerability where two requests could generate same code
+    let room;
+    let createAttempts = 0;
+    const maxCreateAttempts = 5;
+
+    while (createAttempts < maxCreateAttempts) {
+      createAttempts++;
+      const code = generateRoomCode();
+
+      try {
+        room = await prisma.studyRoom.create({
+          data: {
             id: crypto.randomUUID(),
-            userId: session.user.id,
-            role: "HOST",
-            status: "ONLINE",
+            hostId: session.user.id,
+            title,
+            description,
+            code,
+            notebookId,
+            isPrivate: isPrivate || false,
+            maxParticipants: maxParticipants || 10,
+            scheduledFor: scheduledFor ? new Date(scheduledFor) : null,
+            settings: settings || {
+              allowAudio: true,
+              allowVideo: true,
+              allowChat: true,
+              allowAnnotations: true,
+            },
+            updatedAt: new Date(),
+            // Add host as participant
+            StudyRoomParticipant: {
+              create: {
+                id: crypto.randomUUID(),
+                userId: session.user.id,
+                role: "HOST",
+                status: "ONLINE",
+              },
+            },
           },
-        },
-      },
-      include: {
-        User: {
-          select: { id: true, name: true, image: true },
-        },
-        Notebook: {
-          select: { id: true, title: true, emoji: true },
-        },
-        StudyRoomParticipant: {
           include: {
             User: {
               select: { id: true, name: true, image: true },
             },
+            Notebook: {
+              select: { id: true, title: true, emoji: true },
+            },
+            StudyRoomParticipant: {
+              include: {
+                User: {
+                  select: { id: true, name: true, image: true },
+                },
+              },
+            },
+            _count: {
+              select: {
+                StudyRoomParticipant: true,
+                StudyRoomMessage: true,
+              },
+            },
           },
-        },
-        _count: {
-          select: {
-            StudyRoomParticipant: true,
-            StudyRoomMessage: true,
-          },
-        },
-      },
-    });
+        });
+        // Successfully created, break out of retry loop
+        break;
+      } catch (createError: any) {
+        // If it's a unique constraint violation on code, retry with new code
+        if (createError.code === 'P2002' && createAttempts < maxCreateAttempts) {
+          continue;
+        }
+        // Other error or max attempts reached, throw
+        throw createError;
+      }
+    }
+
+    if (!room) {
+      return NextResponse.json(
+        { error: "Failed to generate unique room code" },
+        { status: 500 }
+      );
+    }
 
     // Transform response to match expected frontend format
     const transformedRoom = {

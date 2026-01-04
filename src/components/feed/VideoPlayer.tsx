@@ -117,9 +117,14 @@ export default function VideoPlayer({ video, isActive }: VideoPlayerProps) {
     setLikeCount((prev) => (newLiked ? prev + 1 : prev - 1));
 
     try {
-      await fetch(`/api/videos/${video.id}/like`, {
+      const response = await fetch(`/api/videos/${video.id}/like`, {
         method: newLiked ? "POST" : "DELETE",
       });
+      // Revert on any non-OK response (not just network errors)
+      if (!response.ok) {
+        setLiked(!newLiked);
+        setLikeCount((prev) => (newLiked ? prev - 1 : prev + 1));
+      }
     } catch {
       setLiked(!newLiked);
       setLikeCount((prev) => (newLiked ? prev - 1 : prev + 1));
@@ -133,9 +138,13 @@ export default function VideoPlayer({ video, isActive }: VideoPlayerProps) {
     setBookmarked(newBookmarked);
 
     try {
-      await fetch(`/api/videos/${video.id}/bookmark`, {
+      const response = await fetch(`/api/videos/${video.id}/bookmark`, {
         method: newBookmarked ? "POST" : "DELETE",
       });
+      // Revert on any non-OK response
+      if (!response.ok) {
+        setBookmarked(!newBookmarked);
+      }
     } catch {
       setBookmarked(!newBookmarked);
     }

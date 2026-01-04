@@ -33,6 +33,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         User: {
           select: { id: true, name: true, image: true },
         },
+        NotebookGroup: {
+          select: {
+            id: true,
+            name: true,
+            emoji: true,
+            color: true,
+          },
+        },
         NotebookSource: {
           orderBy: { createdAt: "desc" },
         },
@@ -88,6 +96,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       emoji: notebook.emoji,
       color: notebook.color,
       isPublic: notebook.isPublic,
+      groupId: notebook.groupId,
+      group: notebook.NotebookGroup,
       createdAt: notebook.createdAt,
       updatedAt: notebook.updatedAt,
       user: notebook.User,
@@ -132,7 +142,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     const { notebookId } = await params;
     const body = await request.json();
-    const { title, description, emoji, color, isPublic } = body;
+    const { title, description, emoji, color, isPublic, groupId } = body;
 
     // Check ownership or editor access
     const notebook = await prisma.notebook.findFirst({
@@ -159,6 +169,22 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Verify group ownership if groupId is provided
+    if (groupId !== undefined && groupId !== null) {
+      const group = await prisma.notebookGroup.findFirst({
+        where: {
+          id: groupId,
+          userId: session.user.id,
+        },
+      });
+      if (!group) {
+        return NextResponse.json(
+          { error: "Group not found or not owned by user" },
+          { status: 400 }
+        );
+      }
+    }
+
     const updated = await prisma.notebook.update({
       where: { id: notebookId },
       data: {
@@ -167,6 +193,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         ...(emoji && { emoji }),
         ...(color && { color }),
         ...(isPublic !== undefined && { isPublic }),
+        ...(groupId !== undefined && { groupId: groupId || null }),
+      },
+      include: {
+        NotebookGroup: {
+          select: {
+            id: true,
+            name: true,
+            emoji: true,
+            color: true,
+          },
+        },
       },
     });
 

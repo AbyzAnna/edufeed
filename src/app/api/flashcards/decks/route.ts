@@ -87,12 +87,14 @@ export async function POST(request: NextRequest) {
 
     const deck = await prisma.deck.create({
       data: {
+        id: crypto.randomUUID(),
         userId: session.user.id,
         title,
         description,
         color,
         sourceId,
         isPublic: isPublic || false,
+        updatedAt: new Date(),
       },
     });
 

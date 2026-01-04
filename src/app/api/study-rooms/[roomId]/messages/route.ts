@@ -19,7 +19,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { roomId } = await params;
     const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get("limit") || "50");
+    const limitParam = parseInt(searchParams.get("limit") || "50", 10);
+    const limit = isNaN(limitParam) ? 50 : Math.min(Math.max(1, limitParam), 100);
     const cursor = searchParams.get("cursor");
 
     // Check participant access

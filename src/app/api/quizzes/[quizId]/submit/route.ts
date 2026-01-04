@@ -52,6 +52,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // SECURITY FIX: Prevent double-submission of quiz attempts
+    if (attempt.completedAt) {
+      return NextResponse.json(
+        { error: "This quiz attempt has already been submitted" },
+        { status: 409 }
+      );
+    }
+
     // Get questions with correct answers
     const questions = await prisma.question.findMany({
       where: { quizId },
@@ -66,60 +74,75 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const questionMap = new Map(questions.map((q) => [q.id, q]));
 
-    // Score answers and create answer records
-    let correctCount = 0;
-    const results: {
-      questionId: string;
-      questionText: string;
-      userAnswer: string;
-      correctAnswer: string;
-      isCorrect: boolean;
-      explanation: string;
-    }[] = [];
+    // Use transaction to ensure atomicity and prevent race conditions
+    const { correctCount, maxScore, percentage, results } = await prisma.$transaction(async (tx) => {
+      // Double-check attempt hasn't been submitted (race condition protection)
+      const freshAttempt = await tx.quizAttempt.findUnique({
+        where: { id: attemptId },
+        select: { completedAt: true },
+      });
 
-    for (const submitted of answers) {
-      const question = questionMap.get(submitted.questionId);
-      if (!question) continue;
+      if (freshAttempt?.completedAt) {
+        throw new Error("ALREADY_SUBMITTED");
+      }
 
-      const isCorrect = submitted.answer === question.correctAnswer;
-      if (isCorrect) correctCount++;
+      // Score answers and create answer records
+      let correctCount = 0;
+      const results: {
+        questionId: string;
+        questionText: string;
+        userAnswer: string;
+        correctAnswer: string;
+        isCorrect: boolean;
+        explanation: string;
+      }[] = [];
 
-      // Create answer record
-      await prisma.answer.create({
-        data: {
-          id: crypto.randomUUID(),
-          attemptId,
-          questionId: submitted.questionId,
+      for (const submitted of answers) {
+        const question = questionMap.get(submitted.questionId);
+        if (!question) continue;
+
+        const isCorrect = submitted.answer === question.correctAnswer;
+        if (isCorrect) correctCount++;
+
+        // Create answer record
+        await tx.answer.create({
+          data: {
+            id: crypto.randomUUID(),
+            attemptId,
+            questionId: submitted.questionId,
+            userAnswer: submitted.answer,
+            isCorrect,
+            timeSpent: submitted.timeSpent || null,
+          },
+        });
+
+        results.push({
+          questionId: question.id,
+          questionText: question.text,
           userAnswer: submitted.answer,
+          correctAnswer: question.correctAnswer || "",
           isCorrect,
-          timeSpent: submitted.timeSpent || null,
+          explanation: question.explanation || "",
+        });
+      }
+
+      // Calculate final score
+      const maxScore = questions.length;
+      const percentage = maxScore > 0 ? Math.round((correctCount / maxScore) * 100) : 0;
+
+      // Update attempt with final results
+      await tx.quizAttempt.update({
+        where: { id: attemptId },
+        data: {
+          score: correctCount,
+          maxScore,
+          percentage,
+          timeSpent: totalTimeSpent || 0,
+          completedAt: new Date(),
         },
       });
 
-      results.push({
-        questionId: question.id,
-        questionText: question.text,
-        userAnswer: submitted.answer,
-        correctAnswer: question.correctAnswer || "",
-        isCorrect,
-        explanation: question.explanation || "",
-      });
-    }
-
-    // Calculate final score
-    const maxScore = questions.length;
-    const percentage = Math.round((correctCount / maxScore) * 100);
-
-    // Update attempt with final results
-    await prisma.quizAttempt.update({
-      where: { id: attemptId },
-      data: {
-        score: correctCount,
-        maxScore,
-        percentage,
-        timeSpent: totalTimeSpent || 0,
-        completedAt: new Date(),
-      },
+      return { correctCount, maxScore, percentage, results };
     });
 
     return NextResponse.json({
@@ -130,6 +153,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       passed: percentage >= 70,
     });
   } catch (error) {
+    // Handle already submitted error from transaction
+    if (error instanceof Error && error.message === "ALREADY_SUBMITTED") {
+      return NextResponse.json(
+        { error: "This quiz attempt has already been submitted" },
+        { status: 409 }
+      );
+    }
     console.error("Error submitting quiz:", error);
     return NextResponse.json(
       { error: "Failed to submit quiz" },

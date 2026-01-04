@@ -423,6 +423,7 @@ export async function checkWorkersHealth(): Promise<boolean> {
 
 /**
  * Batch process multiple sources
+ * Uses Promise.allSettled to ensure one failure doesn't block others
  */
 export async function batchStoreEmbeddings(
   sources: Array<{
@@ -431,7 +432,7 @@ export async function batchStoreEmbeddings(
     title: string;
     type: string;
   }>
-): Promise<void> {
+): Promise<{ succeeded: number; failed: number; errors: string[] }> {
   const promises = sources.map((source) =>
     storeDocumentEmbeddings(source.id, source.content, {
       title: source.title,
@@ -439,5 +440,17 @@ export async function batchStoreEmbeddings(
     })
   );
 
-  await Promise.all(promises);
+  const results = await Promise.allSettled(promises);
+
+  const succeeded = results.filter((r) => r.status === "fulfilled" && r.value).length;
+  const failed = results.filter((r) => r.status === "rejected" || (r.status === "fulfilled" && !r.value)).length;
+  const errors = results
+    .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+    .map((r) => r.reason?.message || String(r.reason));
+
+  if (failed > 0) {
+    console.warn(`Batch embedding: ${succeeded} succeeded, ${failed} failed. Errors:`, errors);
+  }
+
+  return { succeeded, failed, errors };
 }

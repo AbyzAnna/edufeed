@@ -8,6 +8,33 @@ import { ContentBlockedError } from '@/lib/moderation/errors';
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT = 10; // 10 requests per minute
 const RATE_WINDOW = 60 * 1000; // 1 minute
+const MAX_MAP_SIZE = 10000; // Maximum entries to prevent memory leak
+let lastCleanup = 0;
+
+// SECURITY FIX: Cleanup expired entries to prevent memory leak
+function cleanupRateLimitMap(): void {
+  const now = Date.now();
+  // Only run cleanup once per minute
+  if (now - lastCleanup < 60000 && rateLimitMap.size < MAX_MAP_SIZE) return;
+  lastCleanup = now;
+
+  for (const [key, value] of rateLimitMap.entries()) {
+    if (now > value.resetAt) {
+      rateLimitMap.delete(key);
+    }
+  }
+
+  // Emergency cleanup if still too large
+  if (rateLimitMap.size >= MAX_MAP_SIZE) {
+    const entriesToDelete = Math.floor(MAX_MAP_SIZE * 0.2);
+    let deleted = 0;
+    for (const key of rateLimitMap.keys()) {
+      if (deleted >= entriesToDelete) break;
+      rateLimitMap.delete(key);
+      deleted++;
+    }
+  }
+}
 
 /**
  * POST /api/moderation/check
@@ -26,7 +53,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Rate limiting
+    // Rate limiting with cleanup
+    cleanupRateLimitMap(); // SECURITY FIX: Clean up expired entries first
     const rateLimitKey = `moderation:${user.id}`;
     const now = Date.now();
     const rateLimit = rateLimitMap.get(rateLimitKey);
@@ -44,7 +72,8 @@ export async function POST(request: NextRequest) {
         }
         rateLimit.count++;
       } else {
-        // Reset window
+        // Reset window - delete expired entry first
+        rateLimitMap.delete(rateLimitKey);
         rateLimitMap.set(rateLimitKey, { count: 1, resetAt: now + RATE_WINDOW });
       }
     } else {

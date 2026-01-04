@@ -26,6 +26,8 @@
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@huggingface/inference": "^4.13.5",
     "@prisma/client": "^5.22.0",
     "@sendgrid/mail": "^8.1.6",
@@ -49,7 +51,8 @@
     "prisma": "^5.22.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "replicate": "^1.4.0"
+    "replicate": "^1.4.0",
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20251225.0",

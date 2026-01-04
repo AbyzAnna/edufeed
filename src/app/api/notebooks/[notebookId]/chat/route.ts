@@ -31,7 +31,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { notebookId } = await params;
     const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get("limit") || "50");
+    // Validate and clamp limit to prevent DoS via excessive data retrieval
+    const rawLimit = parseInt(searchParams.get("limit") || "50");
+    const limit = Math.min(Math.max(1, isNaN(rawLimit) ? 50 : rawLimit), 100);
     const cursor = searchParams.get("cursor");
 
     // Check access
@@ -208,52 +210,26 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       const workersUrl = process.env.WORKERS_URL;
       if (workersUrl) {
         try {
-          // Use the /api/generate endpoint which accepts context directly
-          const chatPrompt = `You are a helpful AI assistant that answers questions based on the user's notebook sources.
-Answer the following question based on the provided notebook content.
-Always be accurate and cite specific information from the sources when possible.
-If the information isn't available in the sources, say so clearly.
-
-User question: ${message}`;
-
-          const response = await fetch(`${workersUrl}/api/generate`, {
+          // Use the dedicated /api/notebook-chat endpoint for Q&A
+          const response = await fetch(`${workersUrl}/api/notebook-chat`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              prompt: chatPrompt,
+              message,
               context: contextText,
-              outputType: "CHAT_RESPONSE",
+              conversationHistory: conversationHistory.map(msg => ({
+                role: msg.role === "user" ? "user" : "assistant",
+                content: msg.content,
+              })),
             }),
           });
 
           if (response.ok) {
             const data = await response.json();
-            // The generate endpoint returns { content: { ... } }
-            if (data.content) {
-              // Extract the response text from the content
-              if (typeof data.content === "string") {
-                aiResponse = data.content;
-              } else if (data.content.response) {
-                aiResponse = data.content.response;
-              } else if (data.content.message) {
-                aiResponse = data.content.message;
-              } else if (data.content.answer) {
-                aiResponse = data.content.answer;
-              } else if (data.content.text) {
-                aiResponse = data.content.text;
-              } else if (data.content.raw) {
-                aiResponse = data.content.raw;
-              } else {
-                // Try to get any string value from the content
-                const values = Object.values(data.content);
-                const stringValue = values.find(v => typeof v === "string" && (v as string).length > 10);
-                if (stringValue) {
-                  aiResponse = stringValue as string;
-                }
-              }
-              if (aiResponse) {
-                aiProvider = "workers";
-              }
+            // The notebook-chat endpoint returns { response: "...", success: true }
+            if (data.success && data.response) {
+              aiResponse = data.response;
+              aiProvider = "workers";
             }
           }
         } catch (workersError) {

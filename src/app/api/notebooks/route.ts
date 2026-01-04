@@ -9,8 +9,11 @@ export async function GET(request: NextRequest) {
     const showPublic = searchParams.get("public") === "true";
     const search = searchParams.get("search") || "";
 
+    console.log("[Notebooks API] GET request, showPublic:", showPublic);
+
     // For public notebooks, we don't require authentication
     const session = await getAuthSession();
+    console.log("[Notebooks API] Session:", session ? `User ${session.user.id}` : "No session");
 
     let whereClause;
 
@@ -51,6 +54,14 @@ export async function GET(request: NextRequest) {
             id: true,
             name: true,
             image: true,
+          },
+        },
+        NotebookGroup: {
+          select: {
+            id: true,
+            name: true,
+            emoji: true,
+            color: true,
           },
         },
         _count: {
@@ -111,23 +122,79 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, description, emoji, color } = body;
+    const { title, description, emoji, color, groupId } = body;
 
-    if (!title) {
+    // Input validation
+    if (!title || typeof title !== "string") {
       return NextResponse.json(
         { error: "Title is required" },
         { status: 400 }
       );
     }
 
+    const trimmedTitle = title.trim();
+    if (trimmedTitle.length === 0) {
+      return NextResponse.json(
+        { error: "Title cannot be empty" },
+        { status: 400 }
+      );
+    }
+
+    if (trimmedTitle.length > 200) {
+      return NextResponse.json(
+        { error: "Title must be 200 characters or less" },
+        { status: 400 }
+      );
+    }
+
+    if (description && typeof description === "string" && description.length > 2000) {
+      return NextResponse.json(
+        { error: "Description must be 2000 characters or less" },
+        { status: 400 }
+      );
+    }
+
+    // Validate emoji if provided (should be a single emoji or short string)
+    if (emoji && (typeof emoji !== "string" || emoji.length > 10)) {
+      return NextResponse.json(
+        { error: "Invalid emoji" },
+        { status: 400 }
+      );
+    }
+
+    // Validate color if provided (should be a hex color)
+    if (color && (typeof color !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(color))) {
+      return NextResponse.json(
+        { error: "Invalid color format. Use hex format like #6366f1" },
+        { status: 400 }
+      );
+    }
+
+    // Verify group ownership if groupId is provided
+    if (groupId) {
+      const group = await prisma.notebookGroup.findFirst({
+        where: {
+          id: groupId,
+          userId: session.user.id,
+        },
+      });
+      if (!group) {
+        return NextResponse.json(
+          { error: "Group not found or not owned by user" },
+          { status: 400 }
+        );
+      }
+    }
+
     const notebook = await prisma.notebook.create({
       data: {
         id: crypto.randomUUID(),
         userId: session.user.id,
-        title,
-        description,
+        title: trimmedTitle,
+        description: description?.trim() || null,
         emoji: emoji || "📚",
         color: color || "#6366f1",
+        groupId: groupId || null,
       },
       include: {
         _count: {

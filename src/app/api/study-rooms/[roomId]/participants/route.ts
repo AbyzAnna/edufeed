@@ -17,6 +17,21 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const { roomId } = await params;
 
+    // SECURITY FIX: Verify user is a participant before returning data
+    const userParticipation = await prisma.studyRoomParticipant.findFirst({
+      where: {
+        roomId,
+        userId: session.user.id,
+      },
+    });
+
+    if (!userParticipation) {
+      return NextResponse.json(
+        { error: "Not a participant" },
+        { status: 403 }
+      );
+    }
+
     const participants = await prisma.studyRoomParticipant.findMany({
       where: { roomId },
       include: {

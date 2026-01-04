@@ -165,7 +165,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         FAQ: `Generate frequently asked questions based on these sources. Create 10-15 Q&A pairs covering the main topics. Format as JSON with field: faqs (array of {question, answer}).`,
         BRIEFING_DOC: `Create an executive briefing document summarizing these sources. Include: executive summary, key findings, recommendations, and action items. Format as JSON with fields: executiveSummary, keyFindings (array), recommendations (array), actionItems (array).`,
         TIMELINE: `Create a timeline of events or concepts from these sources. Format as JSON with field: events (array of {date, title, description}).`,
-        MIND_MAP: `Create a mind map structure from these sources. Identify the central topic and branch out to subtopics. Format as JSON with fields: centralTopic, branches (array of {topic, subtopics (array)}).`,
+        MIND_MAP: `Create a comprehensive mind map structure from these sources. Identify the central topic and create 4-8 major branches with detailed subtopics. Each branch should have a clear topic name and 2-5 related subtopics. Optionally include a short description for the central topic. Format as JSON with fields: centralTopic (string - the main theme), description (optional string - brief context), branches (array of {topic: string - branch name, subtopics: array of strings - related concepts, description: optional string - brief explanation}).`,
         AUDIO_OVERVIEW: `Create a podcast-style script discussing these sources. Write a conversational dialogue between two hosts exploring the key topics. Format as JSON with fields: script (array of {speaker, text}), duration (estimated minutes).`,
         VIDEO_OVERVIEW: `Create a video presentation script with visual descriptions. Include intro, main segments, and outro. Format as JSON with fields: segments (array of {title, narration, visualDescription, duration}), totalDuration.`,
         FLASHCARD_DECK: `Create flashcards from these sources. Generate 15-20 cards covering key concepts. Format as JSON with field: cards (array of {front, back, hint}).`,
@@ -174,20 +174,46 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       };
 
       if (workersUrl) {
-        const response = await fetch(`${workersUrl}/api/generate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt: prompts[validatedType],
-            context: sourceContext,
-            outputType: validatedType,
-            options,
-          }),
-        });
+        // Use dedicated video generation endpoint for VIDEO_OVERVIEW
+        if (validatedType === "VIDEO_OVERVIEW") {
+          const response = await fetch(`${workersUrl}/api/video-overview/generate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sourceId: notebook.NotebookSource[0]?.id,
+              context: sourceContext,
+            }),
+          });
 
-        if (response.ok) {
-          const data = await response.json();
-          generatedContent = data.content || data;
+          if (response.ok) {
+            const videoData = await response.json();
+            // Store video data including segments, videoUrl, audioUrl, thumbnailUrl
+            generatedContent = {
+              videoUrl: videoData.videoUrl,
+              thumbnailUrl: videoData.thumbnailUrl,
+              audioUrl: videoData.audioUrl,
+              segments: videoData.segments,
+              totalDuration: videoData.totalDuration,
+              isActualVideo: true, // Flag to indicate this is real video data
+            };
+          }
+        } else {
+          // Use generic generate endpoint for other types
+          const response = await fetch(`${workersUrl}/api/generate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              prompt: prompts[validatedType],
+              context: sourceContext,
+              outputType: validatedType,
+              options,
+            }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            generatedContent = data.content || data;
+          }
         }
       }
 
@@ -204,6 +230,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       const updatedOutput = await prisma.notebookOutput.findUnique({
         where: { id: output.id },
       });
+
+      if (!updatedOutput) {
+        return NextResponse.json(
+          { error: "Output was created but could not be retrieved" },
+          { status: 500 }
+        );
+      }
 
       return NextResponse.json(updatedOutput);
     } catch (genError) {

@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { GraduationCap, BookOpen, Users, Brain, ArrowRight, Sparkles } from "lucide-react";
+import { GraduationCap, BookOpen, Users, Brain, ArrowRight, Sparkles, LogOut } from "lucide-react";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/components/providers/SessionProvider";
 
 export default function Home() {
   const router = useRouter();
+  const { user, signOut } = useAuth();
 
   useEffect(() => {
     // Check if there's an auth error or token in the URL hash
@@ -28,18 +30,52 @@ export default function Home() {
             <span className="text-xl font-bold">EduFeed</span>
           </div>
           <div className="flex items-center gap-4">
-            <Link
-              href="/login"
-              className="text-gray-300 hover:text-white transition-colors"
-            >
-              Sign In
-            </Link>
-            <Link
-              href="/login"
-              className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors"
-            >
-              Get Started
-            </Link>
+            {user ? (
+              <>
+                <Link
+                  href="/notebooks"
+                  className="text-gray-300 hover:text-white transition-colors"
+                >
+                  My Notebooks
+                </Link>
+                <div className="flex items-center gap-3">
+                  {user.user_metadata?.avatar_url && (
+                    <Link href="/profile">
+                      <img
+                        src={user.user_metadata.avatar_url}
+                        alt={user.user_metadata?.full_name || "User"}
+                        className="w-8 h-8 rounded-full hover:ring-2 hover:ring-purple-500 transition-all"
+                      />
+                    </Link>
+                  )}
+                  <span className="text-sm text-gray-300 hidden sm:inline">
+                    {user.user_metadata?.full_name || user.email}
+                  </span>
+                  <button
+                    onClick={() => signOut()}
+                    className="text-gray-400 hover:text-white transition-colors"
+                    title="Sign Out"
+                  >
+                    <LogOut className="w-5 h-5" />
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  className="text-gray-300 hover:text-white transition-colors"
+                >
+                  Sign In
+                </Link>
+                <Link
+                  href="/login"
+                  className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors"
+                >
+                  Get Started
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -66,17 +102,17 @@ export default function Home() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
-              href="/login"
+              href={user ? "/notebooks/new" : "/login"}
               className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 text-white font-medium px-8 py-4 rounded-xl transition-colors flex items-center justify-center gap-2"
             >
-              Get Started
+              {user ? "Create Notebook" : "Get Started"}
               <ArrowRight className="w-5 h-5" />
             </Link>
             <Link
               href="/notebooks"
               className="w-full sm:w-auto bg-white/10 hover:bg-white/20 text-white font-medium px-8 py-4 rounded-xl transition-colors"
             >
-              View Notebooks
+              {user ? "My Notebooks" : "View Notebooks"}
             </Link>
           </div>
         </div>

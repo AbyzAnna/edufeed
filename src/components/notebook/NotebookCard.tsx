@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import {
   FileText,
@@ -44,6 +44,18 @@ export default function NotebookCard({
   onEdit,
 }: NotebookCardProps) {
   const [showMenu, setShowMenu] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (showMenu && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setMenuPosition({
+        top: rect.bottom + 4,
+        left: rect.right - 160, // 160px = menu width (w-40)
+      });
+    }
+  }, [showMenu]);
 
   const formatDate = (date: string) => {
     const d = new Date(date);
@@ -80,6 +92,7 @@ export default function NotebookCard({
           {/* Menu button */}
           <div className="relative">
             <button
+              ref={buttonRef}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -93,10 +106,13 @@ export default function NotebookCard({
             {showMenu && (
               <>
                 <div
-                  className="fixed inset-0 z-10"
+                  className="fixed inset-0 z-40"
                   onClick={() => setShowMenu(false)}
                 />
-                <div className="absolute right-0 top-full mt-1 w-40 bg-zinc-900 rounded-xl border border-white/10 shadow-xl z-20 overflow-hidden">
+                <div
+                  className="fixed w-40 bg-zinc-900 rounded-xl border border-white/10 shadow-xl z-50 overflow-hidden"
+                  style={{ top: menuPosition.top, left: menuPosition.left }}
+                >
                   <button
                     onClick={(e) => {
                       e.preventDefault();

@@ -19,17 +19,27 @@ export interface PodcastEpisode {
   imageUrl?: string;
 }
 
+// Timeout for external API calls (30 seconds)
+const EXTERNAL_API_TIMEOUT = 30000;
+
 /**
  * Parse a podcast RSS feed URL and extract feed info and episodes
  */
 export async function parsePodcastFeed(feedUrl: string): Promise<PodcastFeed> {
   try {
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT);
+
     const response = await fetch(feedUrl, {
       headers: {
         "User-Agent": "EduFeed Podcast Parser/1.0",
         Accept: "application/rss+xml, application/xml, text/xml",
       },
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       throw new Error(`Failed to fetch feed: ${response.status}`);
@@ -107,6 +117,10 @@ export async function parsePodcastFeed(feedUrl: string): Promise<PodcastFeed> {
     };
   } catch (error) {
     console.error("Error parsing podcast feed:", error);
+    // Check if it was a timeout error
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error("Request timed out while fetching podcast feed");
+    }
     throw new Error(
       `Failed to parse podcast feed: ${
         error instanceof Error ? error.message : "Unknown error"
@@ -172,11 +186,18 @@ export async function searchPodcasts(
   }[]
 > {
   try {
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT);
+
     const response = await fetch(
       `https://itunes.apple.com/search?term=${encodeURIComponent(
         query
-      )}&media=podcast&limit=${limit}`
+      )}&media=podcast&limit=${limit}`,
+      { signal: controller.signal }
     );
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       throw new Error("Failed to search podcasts");

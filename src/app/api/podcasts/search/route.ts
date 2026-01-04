@@ -13,7 +13,8 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const query = searchParams.get("q");
-    const limit = parseInt(searchParams.get("limit") || "10");
+    const limitParam = parseInt(searchParams.get("limit") || "10", 10);
+    const limit = isNaN(limitParam) ? 10 : Math.min(Math.max(1, limitParam), 25);
 
     if (!query) {
       return NextResponse.json(

@@ -198,9 +198,9 @@ export default function NotebookDetailPage() {
   const completedSources = notebook.sources.filter((s) => s.status === "COMPLETED");
 
   return (
-    <div className="min-h-screen bg-[#1a1a1a] flex flex-col">
+    <div className="h-[calc(100vh-4rem-5rem)] md:h-[calc(100vh-4rem)] bg-[#1a1a1a] flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="flex-shrink-0 border-b border-white/5 bg-[#1a1a1a]/95 backdrop-blur-xl sticky top-0 z-40">
+      <header className="flex-shrink-0 border-b border-white/5 bg-[#1a1a1a]">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link
@@ -239,9 +239,9 @@ export default function NotebookDetailPage() {
       </header>
 
       {/* Three-Panel Layout */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex min-h-0">
         {/* Left Panel - Sources */}
-        <div className="w-[300px] flex-shrink-0 border-r border-white/5 flex flex-col overflow-hidden">
+        <div className="w-[300px] flex-shrink-0 border-r border-white/5 flex flex-col min-h-0 overflow-hidden">
           <SourcesPanel
             notebookId={notebook.id}
             sources={notebook.sources}
@@ -254,7 +254,7 @@ export default function NotebookDetailPage() {
         </div>
 
         {/* Center Panel - Chat */}
-        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
           <ChatPanel
             notebookId={notebook.id}
             notebookTitle={notebook.title}
@@ -267,7 +267,7 @@ export default function NotebookDetailPage() {
         </div>
 
         {/* Right Panel - Studio */}
-        <div className="w-[280px] flex-shrink-0 border-l border-white/5 flex flex-col overflow-hidden">
+        <div className="w-[280px] flex-shrink-0 border-l border-white/5 flex flex-col min-h-0 overflow-hidden">
           <StudioPanel
             notebookId={notebook.id}
             outputs={notebook.outputs}

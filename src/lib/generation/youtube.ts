@@ -2,6 +2,9 @@ import axios from "axios";
 
 const WORKERS_URL = process.env.WORKERS_URL || "http://localhost:8787";
 
+// Timeout for external API calls (30 seconds)
+const EXTERNAL_API_TIMEOUT = 30000;
+
 export interface YouTubeVideoInfo {
   id: string;
   title: string;
@@ -53,7 +56,9 @@ export async function getYouTubeVideoInfo(
 ): Promise<YouTubeVideoInfo | null> {
   try {
     const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
-    const response = await axios.get(oembedUrl);
+    const response = await axios.get(oembedUrl, {
+      timeout: EXTERNAL_API_TIMEOUT,
+    });
 
     return {
       id: videoId,
@@ -80,6 +85,10 @@ export async function generateKeyMomentsFromContent(
 ): Promise<KeyMoment[]> {
   // First try to use Cloudflare Workers AI
   try {
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT);
+
     const response = await fetch(`${WORKERS_URL}/api/youtube/key-moments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -88,7 +97,10 @@ export async function generateKeyMomentsFromContent(
         description: videoDescription,
         targetDuration: targetClipDuration,
       }),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (response.ok) {
       const result = await response.json();

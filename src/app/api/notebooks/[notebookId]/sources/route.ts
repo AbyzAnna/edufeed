@@ -371,12 +371,14 @@ async function processSourceAndGenerateFeed(
     // Step 3: Create a Source record for the feed system
     const source = await prisma.source.create({
       data: {
+        id: crypto.randomUUID(),
         userId,
         type: mappedSourceType,
         title,
         content: result.content,
         originalUrl: url,
         fileUrl,
+        updatedAt: new Date(),
       },
     });
 
