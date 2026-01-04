@@ -442,8 +442,8 @@ export async function batchStoreEmbeddings(
 
   const results = await Promise.allSettled(promises);
 
-  const succeeded = results.filter((r) => r.status === "fulfilled" && r.value).length;
-  const failed = results.filter((r) => r.status === "rejected" || (r.status === "fulfilled" && !r.value)).length;
+  const succeeded = results.filter((r) => r.status === "fulfilled").length;
+  const failed = results.filter((r) => r.status === "rejected").length;
   const errors = results
     .filter((r): r is PromiseRejectedResult => r.status === "rejected")
     .map((r) => r.reason?.message || String(r.reason));
