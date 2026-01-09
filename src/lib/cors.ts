@@ -12,8 +12,12 @@ import { NextRequest, NextResponse } from "next/server";
 
 // Allowed origins for CORS - EXACT MATCHES ONLY for security
 const ALLOWED_ORIGINS = [
-  // Web app
+  // Web app - localhost development
   "http://localhost:3000",
+  // Web app - Vercel production
+  "https://edufeed-jet.vercel.app",
+  "https://edufeed.vercel.app",
+  // Web app - custom domain (future)
   "https://edufeed.app",
   "https://www.edufeed.app",
   // Mobile app origins (Expo)
@@ -29,6 +33,8 @@ const isDevelopment = process.env.NODE_ENV === "development";
 // SECURITY FIX: Strict regex pattern for development origins
 const DEV_ORIGIN_PATTERN = /^(https?|exp):\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 const DEV_LOCAL_IP_PATTERN = /^(https?|exp):\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?$/;
+// Vercel preview deployments pattern
+const VERCEL_PREVIEW_PATTERN = /^https:\/\/edufeed-[a-z0-9]+-annas-projects-66f0295d\.vercel\.app$/;
 
 /**
  * Check if an origin is allowed for CORS
@@ -42,6 +48,11 @@ export function isAllowedOrigin(origin: string | null): boolean {
     if (DEV_ORIGIN_PATTERN.test(origin) || DEV_LOCAL_IP_PATTERN.test(origin)) {
       return true;
     }
+  }
+
+  // Allow Vercel preview deployments (production and preview)
+  if (VERCEL_PREVIEW_PATTERN.test(origin)) {
+    return true;
   }
 
   // Check against allowed origins - EXACT MATCH ONLY (no startsWith to prevent bypass)
