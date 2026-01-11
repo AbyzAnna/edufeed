@@ -216,11 +216,11 @@ export default function SourcesPanel({
 
         {/* Web Search */}
         <div className="mt-3 relative">
-          <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+          <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 pointer-events-none" />
           <input
             type="text"
             placeholder="Search the web for new sources"
-            className="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-white/30 focus:outline-none focus:border-purple-500/50 transition-colors"
+            className="w-full pl-10 pr-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder-white/30 focus:outline-none focus:border-purple-500/50 transition-colors"
           />
         </div>
       </div>
@@ -229,13 +229,13 @@ export default function SourcesPanel({
       {sources.length > 0 && (
         <div className="flex-shrink-0 px-4 py-2 border-b border-white/5">
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Filter sources..."
-              className="w-full pl-8 pr-3 py-1.5 bg-white/5 border border-white/10 rounded text-xs text-white placeholder-white/30 focus:outline-none focus:border-purple-500/50 transition-colors"
+              className="w-full pl-9 pr-3 py-1.5 bg-white/5 border border-white/10 rounded text-xs text-white placeholder-white/30 focus:outline-none focus:border-purple-500/50 transition-colors"
             />
           </div>
         </div>

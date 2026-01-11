@@ -196,6 +196,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               totalDuration: videoData.totalDuration,
               isActualVideo: true, // Flag to indicate this is real video data
             };
+          } else {
+            const errorText = await response.text().catch(() => "Unknown error");
+            console.error(`[VIDEO_OVERVIEW] Generation failed: ${response.status} - ${errorText}`);
           }
         } else {
           // Use generic generate endpoint for other types
@@ -213,8 +216,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           if (response.ok) {
             const data = await response.json();
             generatedContent = data.content || data;
+          } else {
+            const errorText = await response.text().catch(() => "Unknown error");
+            console.error(`[GENERATE] Generation failed for ${validatedType}: ${response.status} - ${errorText}`);
           }
         }
+      } else {
+        console.warn("[OUTPUTS] WORKERS_URL not configured - cannot generate content");
       }
 
       // Update output with generated content

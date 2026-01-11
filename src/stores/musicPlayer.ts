@@ -167,10 +167,16 @@ export const useMusicPlayer = create<MusicPlayerState>()(
     {
       name: 'music-player-storage',
       partialize: (state) => ({
-        // Only persist these values
+        // Persist these values for persistent playback
         volume: state.volume,
         isMuted: state.isMuted,
-        // Don't persist currentVideo or playing state - let user choose fresh each session
+        // Persist current video and state so music continues across navigation
+        currentVideo: state.currentVideo,
+        isPlaying: state.isPlaying,
+        isMinimized: state.isMinimized,
+        isExpanded: state.isExpanded,
+        queue: state.queue,
+        queueIndex: state.queueIndex,
       }),
     }
   )

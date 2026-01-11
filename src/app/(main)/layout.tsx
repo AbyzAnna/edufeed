@@ -10,7 +10,7 @@ export default function MainLayout({
   return (
     <div className="min-h-screen">
       <Navbar />
-      <main className="md:pt-16 pb-20 md:pb-0">{children}</main>
+      <main className="pt-0 pb-20 md:pt-16 md:pb-0">{children}</main>
       <BottomNav />
       <GlobalMusicPlayer />
     </div>

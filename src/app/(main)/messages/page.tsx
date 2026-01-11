@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   ArrowLeft,
   Send,
@@ -8,6 +8,8 @@ import {
   MessageCircle,
   Image,
   Paperclip,
+  Plus,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -16,6 +18,8 @@ interface User {
   name: string | null;
   username: string | null;
   image: string | null;
+  bio?: string | null;
+  isFollowing?: boolean;
 }
 
 interface Message {
@@ -53,6 +57,14 @@ export default function MessagesPage() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // New conversation modal state
+  const [showNewMessageModal, setShowNewMessageModal] = useState(false);
+  const [userSearchQuery, setUserSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [searchingUsers, setSearchingUsers] = useState(false);
+  const [creatingConversation, setCreatingConversation] = useState(false);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     fetchConversations();
@@ -148,6 +160,88 @@ export default function MessagesPage() {
     }
   };
 
+  // Search for users to start a conversation
+  const searchUsers = useCallback(async (query: string) => {
+    if (query.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    setSearchingUsers(true);
+    try {
+      const res = await fetch(`/api/users/search?q=${encodeURIComponent(query)}&limit=10`);
+      const data = await res.json();
+      setSearchResults(data.users || []);
+    } catch (error) {
+      console.error("Error searching users:", error);
+    } finally {
+      setSearchingUsers(false);
+    }
+  }, []);
+
+  // Debounced user search
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    if (userSearchQuery.length >= 2) {
+      searchTimeoutRef.current = setTimeout(() => {
+        searchUsers(userSearchQuery);
+      }, 300);
+    } else {
+      setSearchResults([]);
+    }
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [userSearchQuery, searchUsers]);
+
+  // Start a new conversation with a user
+  const startConversation = async (userId: string) => {
+    setCreatingConversation(true);
+    try {
+      const res = await fetch("/api/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const newConv = data.conversation;
+
+        // Check if conversation already exists in list
+        const existingConv = conversations.find((c) => c.id === newConv.id);
+        if (!existingConv) {
+          // Add to conversations list
+          setConversations((prev) => [
+            {
+              id: newConv.id,
+              otherUser: newConv.otherUser,
+              lastMessage: null,
+              unreadCount: 0,
+            },
+            ...prev,
+          ]);
+        }
+
+        // Select the conversation
+        setSelectedConversation(newConv.id);
+        setShowNewMessageModal(false);
+        setUserSearchQuery("");
+        setSearchResults([]);
+      }
+    } catch (error) {
+      console.error("Error creating conversation:", error);
+    } finally {
+      setCreatingConversation(false);
+    }
+  };
+
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -175,8 +269,15 @@ export default function MessagesPage() {
         }`}
       >
         {/* Header */}
-        <div className="p-4 border-b border-white/10">
+        <div className="p-4 border-b border-white/10 flex items-center justify-between">
           <h1 className="text-xl font-bold text-white">Messages</h1>
+          <button
+            onClick={() => setShowNewMessageModal(true)}
+            className="p-2 rounded-full bg-purple-600 hover:bg-purple-700 transition-colors"
+            aria-label="New message"
+          >
+            <Plus className="w-5 h-5 text-white" />
+          </button>
         </div>
 
         {/* Search */}
@@ -201,7 +302,13 @@ export default function MessagesPage() {
             <div className="p-8 text-center text-gray-400">
               <MessageCircle className="w-12 h-12 mx-auto mb-2 opacity-50" />
               <p>No messages yet</p>
-              <p className="text-sm mt-1">Start a conversation by sharing content!</p>
+              <p className="text-sm mt-1">Start a conversation with anyone!</p>
+              <button
+                onClick={() => setShowNewMessageModal(true)}
+                className="mt-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-full text-sm font-medium transition-colors"
+              >
+                Send a Message
+              </button>
             </div>
           ) : (
             conversations.map((conv) => (
@@ -380,6 +487,99 @@ export default function MessagesPage() {
           </div>
         )}
       </div>
+
+      {/* New Message Modal */}
+      {showNewMessageModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-md bg-gray-900 rounded-2xl border border-white/10 overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 border-b border-white/10">
+              <h2 className="text-lg font-semibold text-white">New Message</h2>
+              <button
+                onClick={() => {
+                  setShowNewMessageModal(false);
+                  setUserSearchQuery("");
+                  setSearchResults([]);
+                }}
+                className="p-2 rounded-full hover:bg-white/10 transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <div className="p-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  value={userSearchQuery}
+                  onChange={(e) => setUserSearchQuery(e.target.value)}
+                  placeholder="Search by name or @username..."
+                  className="w-full bg-white/10 rounded-xl pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  autoFocus
+                />
+              </div>
+              {userSearchQuery.length > 0 && userSearchQuery.length < 2 && (
+                <p className="text-xs text-gray-500 mt-2">Type at least 2 characters to search</p>
+              )}
+            </div>
+
+            {/* Search Results */}
+            <div className="max-h-80 overflow-y-auto">
+              {searchingUsers ? (
+                <div className="flex justify-center py-8">
+                  <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                </div>
+              ) : searchResults.length > 0 ? (
+                <div className="divide-y divide-white/5">
+                  {searchResults.map((user) => (
+                    <button
+                      key={user.id}
+                      onClick={() => startConversation(user.id)}
+                      disabled={creatingConversation}
+                      className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors disabled:opacity-50"
+                    >
+                      <img
+                        src={user.image || "/default-avatar.png"}
+                        alt={user.name || "User"}
+                        className="w-12 h-12 rounded-full object-cover"
+                      />
+                      <div className="flex-1 text-left">
+                        <p className="font-medium text-white">
+                          {user.name || user.username || "User"}
+                        </p>
+                        {user.username && (
+                          <p className="text-sm text-gray-400">@{user.username}</p>
+                        )}
+                        {user.bio && (
+                          <p className="text-xs text-gray-500 truncate mt-0.5">{user.bio}</p>
+                        )}
+                      </div>
+                      {user.isFollowing && (
+                        <span className="text-xs text-purple-400 bg-purple-500/20 px-2 py-1 rounded-full">
+                          Following
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              ) : userSearchQuery.length >= 2 && !searchingUsers ? (
+                <div className="p-8 text-center text-gray-400">
+                  <p>No users found</p>
+                  <p className="text-sm mt-1">Try a different search term</p>
+                </div>
+              ) : (
+                <div className="p-8 text-center text-gray-400">
+                  <MessageCircle className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                  <p>Search for someone to message</p>
+                  <p className="text-sm mt-1">Find people by name or username</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

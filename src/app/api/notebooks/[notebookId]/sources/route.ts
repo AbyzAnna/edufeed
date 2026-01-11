@@ -120,6 +120,40 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Invalid source type" }, { status: 400 });
     }
 
+    // Validate required fields based on type
+    if ((type === "URL" || type === "YOUTUBE" || type === "GOOGLE_DOC") && !url) {
+      return NextResponse.json(
+        { error: "URL is required for this source type" },
+        { status: 400 }
+      );
+    }
+
+    if (type === "TEXT" && (!content || typeof content !== "string" || content.trim().length === 0)) {
+      return NextResponse.json(
+        { error: "Content is required for text sources" },
+        { status: 400 }
+      );
+    }
+
+    if ((type === "PDF" || type === "IMAGE" || type === "AUDIO") && !fileUrl && !url) {
+      return NextResponse.json(
+        { error: "File URL is required for this source type" },
+        { status: 400 }
+      );
+    }
+
+    // Validate URL format if provided
+    if (url) {
+      try {
+        new URL(url);
+      } catch {
+        return NextResponse.json(
+          { error: "Invalid URL format" },
+          { status: 400 }
+        );
+      }
+    }
+
     // Create source with PENDING status
     const notebookSource = await prisma.notebookSource.create({
       data: {

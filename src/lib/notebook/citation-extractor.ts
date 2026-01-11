@@ -98,6 +98,11 @@ function findMatchingSource(
 ): NotebookContextSource | null {
   const normalizedMention = mentionedTitle.toLowerCase().trim();
 
+  // Early return for empty or too short mentions (prevents false positives)
+  if (!normalizedMention || normalizedMention.length < 2) {
+    return null;
+  }
+
   // Exact match
   for (const source of sources) {
     if (source.title.toLowerCase() === normalizedMention) {
@@ -105,7 +110,7 @@ function findMatchingSource(
     }
   }
 
-  // Contains match
+  // Contains match - require minimum length to avoid false positives
   for (const source of sources) {
     const sourceTitle = source.title.toLowerCase();
     if (sourceTitle.includes(normalizedMention) || normalizedMention.includes(sourceTitle)) {

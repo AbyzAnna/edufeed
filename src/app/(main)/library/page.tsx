@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { useAuth } from "@/components/providers/SessionProvider";
 import { useMusicPlayer, type CuratedVideo, type VideoCategory } from "@/stores/musicPlayer";
 import {
@@ -25,6 +25,7 @@ import {
   VolumeX,
   ExternalLink,
   X,
+  Search,
 } from "lucide-react";
 
 // Curated video collections - relaxing & learning focused
@@ -268,10 +269,10 @@ const CURATED_VIDEOS: Record<VideoCategory, CuratedVideo[]> = {
   shorts: [
     {
       id: "short-1",
-      title: "Study hack that actually works 📚",
-      channelName: "Study Tips",
-      thumbnailUrl: "https://img.youtube.com/vi/0i2p3VL_hWU/maxresdefault.jpg",
-      videoId: "0i2p3VL_hWU",
+      title: "How to Study Effectively for Exams",
+      channelName: "Ali Abdaal",
+      thumbnailUrl: "https://img.youtube.com/vi/Z-zNHHpXoMM/maxresdefault.jpg",
+      videoId: "Z-zNHHpXoMM",
       platform: "youtube",
       duration: "0:58",
       category: "shorts",
@@ -280,39 +281,63 @@ const CURATED_VIDEOS: Record<VideoCategory, CuratedVideo[]> = {
     },
     {
       id: "short-2",
-      title: "POV: You found the perfect study spot",
-      channelName: "Student Life",
-      thumbnailUrl: "https://img.youtube.com/vi/aJ8Lg8VPBuQ/maxresdefault.jpg",
-      videoId: "aJ8Lg8VPBuQ",
+      title: "Why Reading is Important",
+      channelName: "Better Ideas",
+      thumbnailUrl: "https://img.youtube.com/vi/KJ2Lvi9kG2Q/maxresdefault.jpg",
+      videoId: "KJ2Lvi9kG2Q",
       platform: "youtube",
-      duration: "0:32",
+      duration: "0:45",
       category: "shorts",
       isShort: true,
       viewCount: "8M",
     },
     {
       id: "short-3",
-      title: "How to stay focused while studying",
-      channelName: "Productivity Tips",
-      thumbnailUrl: "https://img.youtube.com/vi/IlU-zDU6aQ0/maxresdefault.jpg",
-      videoId: "IlU-zDU6aQ0",
+      title: "How to Beat Procrastination",
+      channelName: "Matt D'Avella",
+      thumbnailUrl: "https://img.youtube.com/vi/arj7oStGLkU/maxresdefault.jpg",
+      videoId: "arj7oStGLkU",
       platform: "youtube",
-      duration: "0:45",
+      duration: "0:52",
+      category: "shorts",
+      isShort: true,
+      viewCount: "6M",
+    },
+    {
+      id: "short-4",
+      title: "The 5 AM Club Morning Routine",
+      channelName: "Robin Sharma",
+      thumbnailUrl: "https://img.youtube.com/vi/VEJ-KVs0MWo/maxresdefault.jpg",
+      videoId: "VEJ-KVs0MWo",
+      platform: "youtube",
+      duration: "0:48",
+      category: "shorts",
+      isShort: true,
+      viewCount: "4M",
+    },
+    {
+      id: "short-5",
+      title: "How to Read More Books",
+      channelName: "Thomas Frank",
+      thumbnailUrl: "https://img.youtube.com/vi/YQOrqAKKcUQ/maxresdefault.jpg",
+      videoId: "YQOrqAKKcUQ",
+      platform: "youtube",
+      duration: "0:55",
       category: "shorts",
       isShort: true,
       viewCount: "5M",
     },
     {
-      id: "short-4",
-      title: "Morning routine for students ☀️",
-      channelName: "Daily Motivation",
-      thumbnailUrl: "https://img.youtube.com/vi/mNK6h1dxAa0/maxresdefault.jpg",
-      videoId: "mNK6h1dxAa0",
+      id: "short-6",
+      title: "Student Motivation - Work Hard",
+      channelName: "Motivation2Study",
+      thumbnailUrl: "https://img.youtube.com/vi/H14bBuluwB8/maxresdefault.jpg",
+      videoId: "H14bBuluwB8",
       platform: "youtube",
       duration: "0:59",
       category: "shorts",
       isShort: true,
-      viewCount: "3M",
+      viewCount: "10M",
     },
   ],
   classical: [
@@ -488,7 +513,7 @@ const CATEGORY_CONFIG: Record<VideoCategory, { icon: React.ReactNode; label: str
     icon: <Zap className="w-5 h-5" />,
     label: "Quick Tips",
     gradient: "from-red-500 to-rose-500",
-    description: "Bite-sized motivation & tips",
+    description: "Study hacks, productivity & motivation",
   },
   classical: {
     icon: <Music className="w-5 h-5" />,
@@ -520,6 +545,26 @@ function VideoCard({
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [currentThumbnailIndex, setCurrentThumbnailIndex] = useState(0);
+
+  // Try multiple thumbnail quality levels as fallbacks
+  const getThumbnailUrls = (videoId: string) => [
+    `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+    `https://img.youtube.com/vi/${videoId}/sddefault.jpg`,
+    `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+    `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+    `https://img.youtube.com/vi/${videoId}/default.jpg`,
+  ];
+
+  const thumbnailUrls = getThumbnailUrls(video.videoId);
+
+  const handleImageError = () => {
+    if (currentThumbnailIndex < thumbnailUrls.length - 1) {
+      setCurrentThumbnailIndex(prev => prev + 1);
+    } else {
+      setImgError(true);
+    }
+  };
 
   const sizeClasses = {
     normal: "w-72 flex-shrink-0",
@@ -546,14 +591,15 @@ function VideoCard({
       >
         {!imgError ? (
           <img
-            src={video.thumbnailUrl}
+            src={thumbnailUrls[currentThumbnailIndex]}
             alt={video.title}
             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-            onError={() => setImgError(true)}
+            onError={handleImageError}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-900/50 to-indigo-900/50">
-            <Music2 className="w-12 h-12 text-white/50" />
+          <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-purple-900/50 to-indigo-900/50 p-4">
+            <Youtube className="w-10 h-10 text-red-500 mb-2" />
+            <span className="text-xs text-white/70 text-center line-clamp-2">{video.title}</span>
           </div>
         )}
 
@@ -864,6 +910,41 @@ export default function LibraryPage() {
     addToQueue,
   } = useMusicPlayer();
   const [activeCategory, setActiveCategory] = useState<VideoCategory | "all">("all");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Filter videos based on search query
+  const filteredVideos = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) return CURATED_VIDEOS;
+
+    const filtered: Record<VideoCategory, CuratedVideo[]> = {
+      focus: [],
+      relaxing: [],
+      lofi: [],
+      nature: [],
+      study: [],
+      shorts: [],
+      classical: [],
+      frequencies: [],
+    };
+
+    Object.entries(CURATED_VIDEOS).forEach(([category, videos]) => {
+      filtered[category as VideoCategory] = videos.filter(
+        (video) =>
+          video.title.toLowerCase().includes(query) ||
+          video.channelName.toLowerCase().includes(query) ||
+          video.category.toLowerCase().includes(query)
+      );
+    });
+
+    return filtered;
+  }, [searchQuery]);
+
+  // Get all matching videos for search results count
+  const totalSearchResults = useMemo(() => {
+    if (!searchQuery.trim()) return 0;
+    return Object.values(filteredVideos).flat().length;
+  }, [filteredVideos, searchQuery]);
 
   const handlePlayVideo = (video: CuratedVideo) => {
     playVideo(video);
@@ -898,7 +979,7 @@ export default function LibraryPage() {
       {/* Header */}
       <div className="sticky top-0 z-40 bg-gradient-to-b from-gray-900 via-gray-900 to-transparent pb-4 pt-6 px-4">
         <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-2xl font-bold text-white flex items-center gap-3">
                 <Music2 className="w-7 h-7 text-purple-400" />
@@ -913,12 +994,43 @@ export default function LibraryPage() {
             </div>
             <button
               onClick={handleShufflePlay}
-              className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors text-sm"
+              className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors text-sm"
             >
               <Shuffle className="w-4 h-4" />
               Shuffle Play
             </button>
           </div>
+
+          {/* Search Bar */}
+          <div className="relative mb-4">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search videos, channels, categories..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-12 pr-12 py-3 rounded-xl bg-white/10 border border-white/10 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-4 top-1/2 -translate-y-1/2 p-1 hover:bg-white/10 rounded-full transition-colors"
+              >
+                <X className="w-4 h-4 text-gray-400" />
+              </button>
+            )}
+          </div>
+
+          {/* Search Results Count */}
+          {searchQuery.trim() && (
+            <div className="mb-4 text-sm text-gray-400">
+              {totalSearchResults === 0 ? (
+                <span>No results found for &quot;{searchQuery}&quot;</span>
+              ) : (
+                <span>Found {totalSearchResults} video{totalSearchResults !== 1 ? 's' : ''} matching &quot;{searchQuery}&quot;</span>
+              )}
+            </div>
+          )}
 
           {/* Category Filter */}
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
@@ -952,8 +1064,8 @@ export default function LibraryPage() {
 
       {/* Content */}
       <div className="max-w-7xl mx-auto mt-4">
-        {/* Featured Section */}
-        {activeCategory === "all" && (
+        {/* Featured Section - only show when not searching */}
+        {activeCategory === "all" && !searchQuery.trim() && (
           <div className="mb-10 px-4">
             <div className="relative rounded-2xl overflow-hidden bg-gradient-to-r from-purple-900/50 to-indigo-900/50 p-8">
               <div className="absolute inset-0 bg-[url('https://img.youtube.com/vi/jfKfPfyJRdk/maxresdefault.jpg')] bg-cover bg-center opacity-20" />
@@ -986,23 +1098,45 @@ export default function LibraryPage() {
           </div>
         )}
 
+        {/* No results message */}
+        {searchQuery.trim() && totalSearchResults === 0 && (
+          <div className="flex flex-col items-center justify-center py-20 px-4">
+            <Search className="w-16 h-16 text-gray-600 mb-4" />
+            <h3 className="text-xl font-semibold text-white mb-2">No videos found</h3>
+            <p className="text-gray-400 text-center max-w-md">
+              Try searching for something else, or browse our curated categories below.
+            </p>
+            <button
+              onClick={() => setSearchQuery("")}
+              className="mt-4 px-6 py-2 rounded-full bg-purple-600 hover:bg-purple-700 text-white text-sm transition-colors"
+            >
+              Clear search
+            </button>
+          </div>
+        )}
+
         {/* Video Sections */}
         {activeCategory === "all" ? (
-          categories.map((category) => (
-            <VideoSection
-              key={category}
-              category={category}
-              videos={CURATED_VIDEOS[category]}
-              currentVideoId={currentVideo?.videoId || null}
-              onPlay={handlePlayVideo}
-              onPlayAll={handlePlayAll}
-              onAddToQueue={handleAddToQueue}
-            />
-          ))
+          categories.map((category) => {
+            const videos = filteredVideos[category];
+            // Only show categories that have videos (especially when searching)
+            if (searchQuery.trim() && videos.length === 0) return null;
+            return (
+              <VideoSection
+                key={category}
+                category={category}
+                videos={videos}
+                currentVideoId={currentVideo?.videoId || null}
+                onPlay={handlePlayVideo}
+                onPlayAll={handlePlayAll}
+                onAddToQueue={handleAddToQueue}
+              />
+            );
+          })
         ) : (
           <VideoSection
             category={activeCategory}
-            videos={CURATED_VIDEOS[activeCategory]}
+            videos={filteredVideos[activeCategory]}
             currentVideoId={currentVideo?.videoId || null}
             onPlay={handlePlayVideo}
             onPlayAll={handlePlayAll}

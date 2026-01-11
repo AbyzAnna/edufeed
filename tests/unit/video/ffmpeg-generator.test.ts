@@ -604,7 +604,7 @@ describe('FFmpeg Termination', () => {
   });
 
   it('should not throw on null terminate', () => {
-    let ffmpeg: typeof mockFFmpeg | null = null;
+    const ffmpeg: typeof mockFFmpeg | null = null;
     expect(() => {
       if (ffmpeg) ffmpeg.terminate();
     }).not.toThrow();

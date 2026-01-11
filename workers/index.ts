@@ -564,7 +564,7 @@ async function extractYouTubeTranscript(videoId: string): Promise<{
     if (captionTracksMatch) {
       try {
         // Clean and parse the JSON
-        let tracksJson = captionTracksMatch[1]
+        const tracksJson = captionTracksMatch[1]
           .replace(/\\x([0-9A-Fa-f]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
           .replace(/\\u0026/g, '&')
           .replace(/\\u003d/g, '=');

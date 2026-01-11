@@ -105,12 +105,33 @@ export async function initFFmpeg(
       });
     });
 
-    // Load FFmpeg core from CDN
-    const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd";
-    await ffmpeg.load({
-      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
-      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
-    });
+    // Load FFmpeg core from CDN with fallback options
+    // Try jsdelivr first (better CORS support), then unpkg as fallback
+    const cdnOptions = [
+      "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd",
+      "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd",
+    ];
+
+    let loadError: Error | null = null;
+    for (const baseURL of cdnOptions) {
+      try {
+        console.log(`[FFmpeg] Trying to load from: ${baseURL}`);
+        await ffmpeg.load({
+          coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
+          wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
+        });
+        console.log(`[FFmpeg] Successfully loaded from: ${baseURL}`);
+        loadError = null;
+        break;
+      } catch (err) {
+        console.warn(`[FFmpeg] Failed to load from ${baseURL}:`, err);
+        loadError = err instanceof Error ? err : new Error(String(err));
+      }
+    }
+
+    if (loadError) {
+      throw loadError;
+    }
 
     isLoaded = true;
     onProgress?.({
@@ -143,6 +164,38 @@ function base64ToUint8Array(base64DataUrl: string): Uint8Array {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes;
+}
+
+/**
+ * Convert SVG to PNG using Canvas
+ * FFmpeg.wasm doesn't handle SVG well, so we convert to PNG first
+ */
+async function svgToPng(svgDataUrl: string, width: number = 1024, height: number = 576): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Failed to get canvas context"));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error("Failed to convert SVG to PNG"));
+          return;
+        }
+        blob.arrayBuffer().then((buffer) => {
+          resolve(new Uint8Array(buffer));
+        }).catch(reject);
+      }, "image/png");
+    };
+    img.onerror = () => reject(new Error("Failed to load SVG image"));
+    img.src = svgDataUrl;
+  });
 }
 
 /**
@@ -231,14 +284,33 @@ export async function generateVideo(
       const segment = validSegments[i];
       const imagePath = `image_${i.toString().padStart(3, "0")}.png`;
 
-      if (segment.imageUrl?.startsWith("data:")) {
-        // Base64 data URL - convert to binary
-        const imageData = base64ToUint8Array(segment.imageUrl);
-        await ffmpeg.writeFile(imagePath, imageData);
-      } else if (segment.imageUrl) {
-        // Remote URL - fetch and write
-        const imageData = await fetchFile(segment.imageUrl);
-        await ffmpeg.writeFile(imagePath, imageData);
+      try {
+        if (segment.imageUrl?.startsWith("data:image/svg")) {
+          // SVG data URL - convert to PNG first (FFmpeg doesn't handle SVG well)
+          console.log(`[FFmpeg] Converting SVG image ${i + 1}/${validSegments.length} to PNG`);
+          const imageData = await svgToPng(segment.imageUrl, width, height);
+          console.log(`[FFmpeg] Converted SVG ${i + 1} to PNG: ${imageData.length} bytes`);
+          await ffmpeg.writeFile(imagePath, imageData);
+        } else if (segment.imageUrl?.startsWith("data:")) {
+          // Base64 data URL (PNG/JPEG) - convert to binary
+          console.log(`[FFmpeg] Processing base64 image ${i + 1}/${validSegments.length}`);
+          const imageData = base64ToUint8Array(segment.imageUrl);
+          if (imageData.length === 0) {
+            throw new Error(`Image ${i + 1} has empty data`);
+          }
+          console.log(`[FFmpeg] Image ${i + 1} size: ${imageData.length} bytes`);
+          await ffmpeg.writeFile(imagePath, imageData);
+        } else if (segment.imageUrl) {
+          // Remote URL - fetch and write
+          console.log(`[FFmpeg] Fetching remote image ${i + 1}: ${segment.imageUrl.substring(0, 50)}...`);
+          const imageData = await fetchFile(segment.imageUrl);
+          await ffmpeg.writeFile(imagePath, imageData);
+        } else {
+          throw new Error(`Image ${i + 1} has no valid URL`);
+        }
+      } catch (imageError) {
+        console.error(`[FFmpeg] Failed to process image ${i + 1}:`, imageError);
+        throw new Error(`Failed to load image ${i + 1}: ${imageError instanceof Error ? imageError.message : "Unknown error"}`);
       }
 
       imagePaths.push(imagePath);
@@ -616,12 +688,22 @@ export async function generateVideoSimple(
       const segment = validSegments[i];
       const imagePath = `image_${i.toString().padStart(3, "0")}.png`;
 
-      if (segment.imageUrl?.startsWith("data:")) {
-        const imageData = base64ToUint8Array(segment.imageUrl);
-        await ffmpeg.writeFile(imagePath, imageData);
-      } else if (segment.imageUrl) {
-        const imageData = await fetchFile(segment.imageUrl);
-        await ffmpeg.writeFile(imagePath, imageData);
+      try {
+        if (segment.imageUrl?.startsWith("data:image/svg")) {
+          // SVG - convert to PNG first
+          console.log(`[FFmpeg Simple] Converting SVG image ${i + 1} to PNG`);
+          const imageData = await svgToPng(segment.imageUrl, 1280, 720);
+          await ffmpeg.writeFile(imagePath, imageData);
+        } else if (segment.imageUrl?.startsWith("data:")) {
+          const imageData = base64ToUint8Array(segment.imageUrl);
+          await ffmpeg.writeFile(imagePath, imageData);
+        } else if (segment.imageUrl) {
+          const imageData = await fetchFile(segment.imageUrl);
+          await ffmpeg.writeFile(imagePath, imageData);
+        }
+      } catch (error) {
+        console.error(`[FFmpeg Simple] Failed to process image ${i + 1}:`, error);
+        throw new Error(`Failed to load image ${i + 1}: ${error instanceof Error ? error.message : "Unknown error"}`);
       }
 
       imagePaths.push(imagePath);

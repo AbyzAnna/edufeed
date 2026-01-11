@@ -114,7 +114,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     // Generate a quick overview using AI
-    let overview = {
+    const overview = {
       summary: null as string | null,
       keyTopics: [] as string[],
       suggestedQuestions: [

@@ -104,9 +104,33 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const { message, sourceIds } = body;
 
-    if (!message) {
+    // Validate message
+    if (!message || typeof message !== "string") {
       return NextResponse.json(
-        { error: "Message is required" },
+        { error: "Message is required and must be a string" },
+        { status: 400 }
+      );
+    }
+
+    const trimmedMessage = message.trim();
+    if (trimmedMessage.length === 0) {
+      return NextResponse.json(
+        { error: "Message cannot be empty" },
+        { status: 400 }
+      );
+    }
+
+    if (trimmedMessage.length > 10000) {
+      return NextResponse.json(
+        { error: "Message is too long (max 10000 characters)" },
+        { status: 400 }
+      );
+    }
+
+    // Validate sourceIds if provided
+    if (sourceIds !== undefined && !Array.isArray(sourceIds)) {
+      return NextResponse.json(
+        { error: "sourceIds must be an array" },
         { status: 400 }
       );
     }
@@ -150,14 +174,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Save user message
+    // Save user message (using trimmed message)
     const userMessage = await prisma.notebookChat.create({
       data: {
         id: crypto.randomUUID(),
         notebookId,
         userId: session.user.id,
         role: "USER",
-        content: message,
+        content: trimmedMessage,
       },
     });
 
@@ -182,7 +206,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Add current message
-    ollamaMessages.push({ role: "user", content: message });
+    ollamaMessages.push({ role: "user", content: trimmedMessage });
 
     // Call AI service for grounded response
     let aiResponse = "";
@@ -215,7 +239,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              message,
+              message: trimmedMessage,
               context: contextText,
               conversationHistory: conversationHistory.map(msg => ({
                 role: msg.role === "user" ? "user" : "assistant",

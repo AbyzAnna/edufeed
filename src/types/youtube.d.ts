@@ -24,9 +24,11 @@ declare global {
   interface Window {
     YT: {
       Player: new (
-        elementId: string,
+        elementId: string | HTMLElement,
         options: {
           videoId: string;
+          width?: string | number;
+          height?: string | number;
           playerVars?: Record<string, number | string>;
           events?: {
             onReady?: (event: { target: YTPlayer }) => void;
@@ -36,6 +38,7 @@ declare global {
         }
       ) => YTPlayer;
       PlayerState: {
+        UNSTARTED: number;
         ENDED: number;
         PLAYING: number;
         PAUSED: number;
