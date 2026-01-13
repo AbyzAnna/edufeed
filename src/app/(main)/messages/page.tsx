@@ -6,7 +6,7 @@ import {
   Send,
   Search,
   MessageCircle,
-  Image,
+  Image as ImageIcon,
   Paperclip,
   Plus,
   X,
@@ -321,9 +321,9 @@ export default function MessagesPage() {
               >
                 <div className="relative">
                   <img
-                    src={conv.otherUser?.image || "/default-avatar.png"}
+                    src={conv.otherUser?.image || "/default-avatar.svg"}
                     alt={conv.otherUser?.name || "User"}
-                    className="w-12 h-12 rounded-full object-cover"
+                    className="w-12 h-12 rounded-full object-cover bg-gray-700"
                   />
                   {conv.unreadCount > 0 && (
                     <span className="absolute -top-1 -right-1 w-5 h-5 bg-purple-500 rounded-full text-xs text-white flex items-center justify-center">
@@ -371,9 +371,9 @@ export default function MessagesPage() {
                 <ArrowLeft className="w-5 h-5 text-white" />
               </button>
               <img
-                src={selectedConv.otherUser?.image || "/default-avatar.png"}
+                src={selectedConv.otherUser?.image || "/default-avatar.svg"}
                 alt={selectedConv.otherUser?.name || "User"}
-                className="w-10 h-10 rounded-full object-cover"
+                className="w-10 h-10 rounded-full object-cover bg-gray-700"
               />
               <div>
                 <p className="font-medium text-white">
@@ -448,7 +448,7 @@ export default function MessagesPage() {
                   <Paperclip className="w-5 h-5" />
                 </button>
                 <button className="p-2 rounded-full hover:bg-white/10 text-gray-400">
-                  <Image className="w-5 h-5" />
+                  <ImageIcon className="w-5 h-5" />
                 </button>
                 <input
                   type="text"
@@ -538,29 +538,38 @@ export default function MessagesPage() {
                       key={user.id}
                       onClick={() => startConversation(user.id)}
                       disabled={creatingConversation}
-                      className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors disabled:opacity-50"
+                      className="w-full flex items-center gap-3 p-4 hover:bg-white/5 transition-colors disabled:opacity-50 group"
                     >
                       <img
-                        src={user.image || "/default-avatar.png"}
-                        alt={user.name || "User"}
-                        className="w-12 h-12 rounded-full object-cover"
+                        src={user.image || "/default-avatar.svg"}
+                        alt={user.name || user.username || "User"}
+                        className="w-12 h-12 rounded-full object-cover bg-gray-700"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.src = "/default-avatar.svg";
+                        }}
                       />
-                      <div className="flex-1 text-left">
-                        <p className="font-medium text-white">
+                      <div className="flex-1 text-left min-w-0">
+                        <p className="font-medium text-white truncate">
                           {user.name || user.username || "User"}
                         </p>
-                        {user.username && (
+                        {user.username && user.name && (
                           <p className="text-sm text-gray-400">@{user.username}</p>
                         )}
                         {user.bio && (
                           <p className="text-xs text-gray-500 truncate mt-0.5">{user.bio}</p>
                         )}
                       </div>
-                      {user.isFollowing && (
-                        <span className="text-xs text-purple-400 bg-purple-500/20 px-2 py-1 rounded-full">
-                          Following
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {user.isFollowing && (
+                          <span className="text-xs text-purple-400 bg-purple-500/20 px-2 py-1 rounded-full">
+                            Following
+                          </span>
+                        )}
+                        <span className="text-xs text-white bg-purple-600 hover:bg-purple-700 px-3 py-1.5 rounded-full font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                          {creatingConversation ? "Starting..." : "Message"}
                         </span>
-                      )}
+                      </div>
                     </button>
                   ))}
                 </div>
