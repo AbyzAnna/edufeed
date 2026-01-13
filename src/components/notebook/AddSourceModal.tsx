@@ -14,6 +14,7 @@ import {
   FileSpreadsheet,
 } from "lucide-react";
 import Button from "@/components/ui/Button";
+import { createClient } from "@/lib/supabase/client";
 
 interface AddSourceModalProps {
   isOpen: boolean;
@@ -58,22 +59,74 @@ export default function AddSourceModal({
     try {
       let fileUrl = null;
 
-      // If file upload type (PDF, IMAGE, AUDIO), upload file first
+      // If file upload type (PDF, IMAGE, AUDIO), upload directly to Supabase Storage
+      // This bypasses the API route to avoid Vercel's 4.5MB body size limit
       if ((selectedType === "PDF" || selectedType === "IMAGE" || selectedType === "AUDIO") && file) {
-        const formData = new FormData();
-        formData.append("file", file);
+        const supabase = createClient();
 
-        const uploadResponse = await fetch("/api/upload", {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!uploadResponse.ok) {
-          throw new Error("Failed to upload file");
+        // Get current user for path prefix
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          throw new Error("Please sign in to upload files");
         }
 
-        const uploadData = await uploadResponse.json();
-        fileUrl = uploadData.url;
+        // Validate file size (50MB max)
+        const maxSize = 50 * 1024 * 1024;
+        if (file.size > maxSize) {
+          throw new Error("File size must be less than 50MB");
+        }
+
+        // Validate file type
+        const allowedTypes: Record<string, string[]> = {
+          "application/pdf": ["pdf"],
+          "image/jpeg": ["jpg", "jpeg"],
+          "image/png": ["png"],
+          "image/gif": ["gif"],
+          "image/webp": ["webp"],
+          "audio/mpeg": ["mp3", "mpeg"],
+          "audio/wav": ["wav"],
+          "audio/mp4": ["m4a", "mp4"],
+        };
+
+        const allowedMimeTypes = Object.keys(allowedTypes);
+        if (!allowedMimeTypes.includes(file.type)) {
+          throw new Error("File type not supported. Allowed: PDF, images, audio");
+        }
+
+        // Generate unique filename
+        const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+        const filename = `${user.id}/${Date.now()}-${sanitizedName}`;
+
+        // Upload directly to Supabase Storage
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from("uploads")
+          .upload(filename, file, {
+            contentType: file.type,
+            cacheControl: "3600",
+            upsert: false,
+          });
+
+        if (uploadError) {
+          console.error("Supabase upload error:", uploadError);
+          // Provide more specific error messages
+          if (uploadError.message?.includes("row-level security")) {
+            throw new Error("Upload permission denied. Please try logging out and back in.");
+          }
+          if (uploadError.message?.includes("Bucket not found")) {
+            throw new Error("Storage not configured. Please contact support.");
+          }
+          if (uploadError.message?.includes("exceeded")) {
+            throw new Error("File size limit exceeded. Maximum is 50MB.");
+          }
+          throw new Error(uploadError.message || "Failed to upload file. Please try again.");
+        }
+
+        // Get public URL
+        const { data: { publicUrl } } = supabase.storage
+          .from("uploads")
+          .getPublicUrl(uploadData.path);
+
+        fileUrl = publicUrl;
       }
 
       // Determine which sources need URL

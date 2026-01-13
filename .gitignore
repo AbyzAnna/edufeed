@@ -72,7 +72,6 @@ htmlcov/
 tests/.auth/
 
 # IDEs
-.vscode/
 .idea/
 *.swp
 *.swo
