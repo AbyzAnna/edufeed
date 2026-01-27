@@ -201,4 +201,18 @@ export const rateLimiters = {
       windowMs: 5 * 60 * 1000, // 5 minutes
       maxRequests: 20,
     }),
+
+  // User profile endpoint - 60 requests per minute
+  userProfile: (identifier: string) =>
+    checkRateLimit("user-profile", identifier, {
+      windowMs: 60 * 1000, // 1 minute
+      maxRequests: 60,
+    }),
+
+  // Account deletion - 5 requests per hour (very sensitive operation)
+  accountDelete: (identifier: string) =>
+    checkRateLimit("account-delete", identifier, {
+      windowMs: 60 * 60 * 1000, // 1 hour
+      maxRequests: 5,
+    }),
 };

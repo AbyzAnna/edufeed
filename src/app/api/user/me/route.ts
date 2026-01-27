@@ -1,38 +1,38 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import jwt from "jsonwebtoken";
+import { getAuthSession } from "@/lib/supabase/auth";
+import { rateLimiters } from "@/lib/rate-limit";
 
-interface TokenPayload {
-  userId: string;
-  email?: string;
-}
-
-function getUserIdFromRequest(request: NextRequest): string | null {
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    return null;
-  }
-
-  const token = authHeader.substring(7);
+export async function GET() {
   try {
-    const payload = jwt.verify(
-      token,
-      process.env.NEXTAUTH_SECRET!
-    ) as TokenPayload;
-    return payload.userId;
-  } catch {
-    return null;
-  }
-}
+    // Use unified auth session (supports both cookie and Bearer token auth)
+    const session = await getAuthSession();
 
-export async function GET(request: NextRequest) {
-  try {
-    const userId = getUserIdFromRequest(request);
-
-    if (!userId) {
+    if (!session?.user?.id) {
       return NextResponse.json(
         { error: "Unauthorized" },
         { status: 401 }
+      );
+    }
+
+    const userId = session.user.id;
+
+    // Apply rate limiting (60 requests per minute per user)
+    const rateLimit = rateLimiters.userProfile(userId);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        {
+          error: "Too many requests",
+          retryAfter: Math.ceil((rateLimit.resetTime - Date.now()) / 1000),
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(Math.ceil((rateLimit.resetTime - Date.now()) / 1000)),
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": String(Math.ceil(rateLimit.resetTime / 1000)),
+          },
+        }
       );
     }
 

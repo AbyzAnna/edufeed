@@ -1,0 +1,8 @@
+{
+  "id": "0006-auth-security-hardening",
+  "title": "Authentication Security Hardening",
+  "status": "in_progress",
+  "priority": "critical",
+  "createdAt": "2026-01-26T18:45:00Z",
+  "tags": ["security", "authentication", "api", "e2e-tests"]
+}
