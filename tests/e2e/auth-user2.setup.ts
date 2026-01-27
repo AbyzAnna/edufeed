@@ -1,27 +1,27 @@
 import { test as setup, expect } from '@playwright/test';
 import path from 'path';
 
-const authFile = path.join(__dirname, '../.auth/user.json');
+const authFile = path.join(__dirname, '../.auth/user2.json');
 
-// Test user credentials - use environment variables or defaults
-const TEST_EMAIL = process.env.E2E_TEST_EMAIL || 'abyzovann@icloud.com';
-const TEST_PASSWORD = process.env.E2E_TEST_PASSWORD || 'TeamWork1$';
+// Second test user credentials
+const TEST_EMAIL = process.env.E2E_TEST_EMAIL_USER2 || 'testuser2@edufeed.app';
+const TEST_PASSWORD = process.env.E2E_TEST_PASSWORD_USER2 || 'TestUser2$';
 
 /**
- * Authentication setup for E2E tests
+ * Authentication setup for second test user (E2E tests)
  *
- * Performs real Supabase authentication to get valid session tokens.
- * This ensures tests run with actual auth instead of bypassing it.
+ * This user is used for multi-user collaboration testing
+ * (e.g., study rooms with 2 participants)
  */
-setup('authenticate', async ({ page }) => {
-  console.log('[Auth Setup] Starting authentication...');
+setup('authenticate user 2', async ({ page }) => {
+  console.log('[Auth Setup User 2] Starting authentication...');
 
   // Navigate to login page
   await page.goto('/login');
 
   // Wait for the login form to be ready
   await page.waitForSelector('#email', { timeout: 10000 });
-  console.log('[Auth Setup] Login page loaded');
+  console.log('[Auth Setup User 2] Login page loaded');
 
   // Fill in email
   await page.fill('#email', TEST_EMAIL);
@@ -31,18 +31,18 @@ setup('authenticate', async ({ page }) => {
 
   // Click submit button
   await page.click('button[type="submit"]');
-  console.log('[Auth Setup] Submitted login form');
+  console.log('[Auth Setup User 2] Submitted login form');
 
   // Wait for successful redirect to notebooks (or any authenticated page)
   try {
     await page.waitForURL('**/notebooks**', { timeout: 15000 });
-    console.log('[Auth Setup] Successfully logged in and redirected to notebooks');
+    console.log('[Auth Setup User 2] Successfully logged in and redirected to notebooks');
   } catch (error) {
     // Check for error message on page
     const errorElement = page.locator('.bg-red-500\\/10');
     if (await errorElement.isVisible()) {
       const errorText = await errorElement.textContent();
-      console.error(`[Auth Setup] Login failed with error: ${errorText}`);
+      console.error(`[Auth Setup User 2] Login failed with error: ${errorText}`);
       throw new Error(`Login failed: ${errorText}`);
     }
     throw error;
@@ -63,9 +63,9 @@ setup('authenticate', async ({ page }) => {
     }
   }
 
-  console.log('[Auth Setup] Authentication verified');
+  console.log('[Auth Setup User 2] Authentication verified');
 
   // Save the authentication state
   await page.context().storageState({ path: authFile });
-  console.log(`[Auth Setup] Saved auth state to ${authFile}`);
+  console.log(`[Auth Setup User 2] Saved auth state to ${authFile}`);
 });

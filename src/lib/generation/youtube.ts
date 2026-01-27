@@ -147,9 +147,9 @@ export function createYouTubeClipUrl(
   startTime: number,
   endTime: number
 ): string {
-  return `https://www.youtube.com/embed/${videoId}?start=${Math.floor(
+  return `https://www.youtube-nocookie.com/embed/${videoId}?start=${Math.floor(
     startTime
-  )}&end=${Math.floor(endTime)}&autoplay=1&rel=0&modestbranding=1`;
+  )}&end=${Math.floor(endTime)}&autoplay=1&rel=0&modestbranding=1&enablejsapi=1`;
 }
 
 /**

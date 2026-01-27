@@ -1,9 +1,0 @@
-{
-  "sessionId": "auto-2026-01-03-bugfix",
-  "startedAt": "2026-01-03T00:00:00Z",
-  "incrementIds": ["bugfix-comprehensive"],
-  "maxIterations": 500,
-  "currentIteration": 0,
-  "status": "active",
-  "task": "comprehensive-bug-hunting"
-}

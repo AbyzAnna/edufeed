@@ -152,9 +152,9 @@ export default function VideoPlayer({ video, isActive }: VideoPlayerProps) {
 
   const getYouTubeEmbedUrl = () => {
     if (!video.youtubeVideoId) return "";
-    let url = `https://www.youtube.com/embed/${video.youtubeVideoId}?autoplay=${
+    let url = `https://www.youtube-nocookie.com/embed/${video.youtubeVideoId}?autoplay=${
       isActive ? 1 : 0
-    }&mute=1&rel=0&modestbranding=1&playsinline=1`;
+    }&mute=1&rel=0&modestbranding=1&playsinline=1&enablejsapi=1`;
     if (video.youtubeStart) url += `&start=${video.youtubeStart}`;
     if (video.youtubeEnd) url += `&end=${video.youtubeEnd}`;
     return url;
@@ -174,8 +174,10 @@ export default function VideoPlayer({ video, isActive }: VideoPlayerProps) {
           <iframe
             src={getYouTubeEmbedUrl()}
             className="w-full h-full"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowFullScreen
+            referrerPolicy="strict-origin-when-cross-origin"
+            loading="lazy"
           />
           <div className="absolute top-4 right-4">
             <a

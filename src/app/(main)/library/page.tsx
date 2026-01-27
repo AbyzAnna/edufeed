@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import { useAuth } from "@/components/providers/SessionProvider";
 import { useMusicPlayer, type CuratedVideo, type VideoCategory } from "@/stores/musicPlayer";
 import {
@@ -26,7 +26,22 @@ import {
   ExternalLink,
   X,
   Search,
+  Loader2,
+  Globe,
 } from "lucide-react";
+
+// YouTube search result type
+interface YouTubeSearchResult {
+  id: string;
+  videoId: string;
+  title: string;
+  channelName: string;
+  thumbnailUrl: string;
+  duration: string;
+  viewCount: string;
+  publishedAt: string;
+  description: string;
+}
 
 // Curated video collections - relaxing & learning focused
 const CURATED_VIDEOS: Record<VideoCategory, CuratedVideo[]> = {
@@ -529,6 +544,117 @@ const CATEGORY_CONFIG: Record<VideoCategory, { icon: React.ReactNode; label: str
   },
 };
 
+// YouTube Search Result Card Component
+function YouTubeSearchResultCard({
+  result,
+  onPlay,
+  onAddToQueue,
+  isCurrentlyPlaying,
+}: {
+  result: YouTubeSearchResult;
+  onPlay: () => void;
+  onAddToQueue: () => void;
+  isCurrentlyPlaying: boolean;
+}) {
+  const [isHovered, setIsHovered] = useState(false);
+  const [imgError, setImgError] = useState(false);
+
+  const isLive = result.duration === "LIVE" || result.duration.toLowerCase().includes("live");
+
+  return (
+    <div
+      className="group cursor-pointer"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Thumbnail */}
+      <div
+        className="relative aspect-video rounded-xl overflow-hidden bg-white/5"
+        onClick={onPlay}
+      >
+        {!imgError ? (
+          <img
+            src={result.thumbnailUrl}
+            alt={result.title}
+            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-red-900/50 to-gray-900/50 p-4">
+            <Youtube className="w-8 h-8 text-red-500 mb-2" />
+            <span className="text-xs text-white/70 text-center line-clamp-2">{result.title}</span>
+          </div>
+        )}
+
+        {/* Overlay on hover */}
+        <div className={`absolute inset-0 bg-black/40 flex items-center justify-center transition-opacity ${isHovered || isCurrentlyPlaying ? 'opacity-100' : 'opacity-0'}`}>
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isCurrentlyPlaying ? 'bg-purple-500' : 'bg-white/90'}`}>
+            {isCurrentlyPlaying ? (
+              <Pause className="w-5 h-5 text-white" />
+            ) : (
+              <Play className="w-5 h-5 text-gray-900 ml-0.5" />
+            )}
+          </div>
+        </div>
+
+        {/* Currently playing indicator */}
+        {isCurrentlyPlaying && (
+          <div className="absolute top-2 right-2">
+            <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-purple-500 text-white text-xs font-medium">
+              <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+              Playing
+            </div>
+          </div>
+        )}
+
+        {/* Duration badge */}
+        <div className="absolute bottom-2 right-2">
+          <span className={`px-2 py-0.5 rounded text-xs font-medium ${isLive ? 'bg-red-500 text-white' : 'bg-black/70 text-white'}`}>
+            {isLive ? '● LIVE' : result.duration}
+          </span>
+        </div>
+
+        {/* YouTube badge */}
+        <div className="absolute top-2 left-2">
+          <div className="w-6 h-6 rounded bg-black/50 flex items-center justify-center">
+            <Youtube className="w-4 h-4 text-red-500" />
+          </div>
+        </div>
+
+        {/* Add to queue button */}
+        {isHovered && !isCurrentlyPlaying && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onAddToQueue();
+            }}
+            className="absolute bottom-2 left-2 p-2 rounded-full bg-black/70 hover:bg-black/90 transition-colors"
+            title="Add to queue"
+          >
+            <ListMusic className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      {/* Info */}
+      <div className="mt-2 px-1">
+        <h3 className="font-medium text-sm line-clamp-2 text-white group-hover:text-purple-400 transition-colors">
+          {result.title}
+        </h3>
+        <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
+          <span className="truncate">{result.channelName}</span>
+        </div>
+        {result.viewCount && (
+          <div className="text-xs text-gray-500 mt-0.5">
+            {result.viewCount}
+            {result.publishedAt && ` • ${result.publishedAt}`}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Video Card Component
 function VideoCard({
   video,
@@ -862,11 +988,13 @@ function VideoPlayerModal({
         </div>
         <div className="aspect-video rounded-xl overflow-hidden bg-black">
           <iframe
-            src={`https://www.youtube.com/embed/${video.videoId}?autoplay=1`}
+            src={`https://www.youtube-nocookie.com/embed/${video.videoId}?autoplay=1&rel=0&modestbranding=1&playsinline=1&enablejsapi=1`}
             title={video.title}
             className="w-full h-full"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowFullScreen
+            referrerPolicy="strict-origin-when-cross-origin"
+            loading="lazy"
           />
         </div>
         <div className="mt-4 flex items-center justify-between">
@@ -911,6 +1039,121 @@ export default function LibraryPage() {
   } = useMusicPlayer();
   const [activeCategory, setActiveCategory] = useState<VideoCategory | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [isSearchingYouTube, setIsSearchingYouTube] = useState(false);
+  const [youtubeSearchResults, setYoutubeSearchResults] = useState<YouTubeSearchResult[]>([]);
+  const [showYouTubeSearch, setShowYouTubeSearch] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Debounced YouTube search with improved error handling and timeout
+  const searchYouTube = useCallback(async (query: string) => {
+    if (!query.trim() || query.length < 3) {
+      setYoutubeSearchResults([]);
+      setShowYouTubeSearch(false);
+      return;
+    }
+
+    setIsSearchingYouTube(true);
+    setSearchError(null);
+
+    // Create AbortController for client-side timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second client timeout
+
+    try {
+      const response = await fetch(
+        `/api/youtube/search?q=${encodeURIComponent(query)}&category=${activeCategory === "all" ? "study" : activeCategory}&limit=20`,
+        { signal: controller.signal }
+      );
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          // User not authenticated - don't show error, just use curated results
+          setYoutubeSearchResults([]);
+          setShowYouTubeSearch(false);
+          return;
+        }
+        throw new Error(`Search failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const results = data.results || [];
+
+      if (results.length > 0) {
+        setYoutubeSearchResults(results);
+        setShowYouTubeSearch(true);
+        setSearchError(null);
+      } else {
+        // No results from API, but not an error
+        setYoutubeSearchResults([]);
+        setShowYouTubeSearch(false);
+      }
+    } catch (error) {
+      clearTimeout(timeoutId);
+
+      if (error instanceof Error && error.name === "AbortError") {
+        console.warn("YouTube search timed out");
+        setSearchError("Search is taking too long. Showing curated results.");
+      } else {
+        console.error("YouTube search error:", error);
+        setSearchError("Unable to search YouTube. Try again or browse curated content.");
+      }
+      setYoutubeSearchResults([]);
+      setShowYouTubeSearch(false);
+    } finally {
+      setIsSearchingYouTube(false);
+    }
+  }, [activeCategory]);
+
+  // Handle search input change with debounce - reduced to 300ms for faster response
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchQuery(value);
+
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    // Clear results if query is too short
+    if (value.trim().length < 3) {
+      setYoutubeSearchResults([]);
+      setShowYouTubeSearch(false);
+      setSearchError(null);
+      return;
+    }
+
+    // Debounce YouTube search - reduced from 500ms to 300ms for faster perceived response
+    searchTimeoutRef.current = setTimeout(() => {
+      searchYouTube(value);
+    }, 300);
+  }, [searchYouTube]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Convert YouTube search result to CuratedVideo format
+  const convertToCuratedVideo = useCallback((result: YouTubeSearchResult): CuratedVideo => {
+    return {
+      id: result.id,
+      title: result.title,
+      channelName: result.channelName,
+      thumbnailUrl: result.thumbnailUrl,
+      videoId: result.videoId,
+      platform: "youtube",
+      duration: result.duration,
+      category: activeCategory === "all" ? "study" : activeCategory,
+      viewCount: result.viewCount,
+      isLive: result.duration === "LIVE" || result.duration.toLowerCase().includes("live"),
+    };
+  }, [activeCategory]);
 
   // Filter videos based on search query
   const filteredVideos = useMemo(() => {
@@ -964,6 +1207,21 @@ export default function LibraryPage() {
     setQueue(shuffled, 0);
   };
 
+  const handlePlayYouTubeResult = (result: YouTubeSearchResult) => {
+    const video = convertToCuratedVideo(result);
+    playVideo(video);
+  };
+
+  const handleAddYouTubeToQueue = (result: YouTubeSearchResult) => {
+    const video = convertToCuratedVideo(result);
+    addToQueue(video);
+  };
+
+  const handlePlayAllYouTubeResults = () => {
+    const videos = youtubeSearchResults.map(convertToCuratedVideo);
+    setQueue(videos, 0);
+  };
+
   const categories: VideoCategory[] = ["lofi", "focus", "relaxing", "nature", "classical", "frequencies", "study", "shorts"];
 
   if (isLoading) {
@@ -1006,28 +1264,62 @@ export default function LibraryPage() {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
               type="text"
-              placeholder="Search videos, channels, categories..."
+              placeholder="Search YouTube videos, channels, or browse categories..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-12 pr-12 py-3 rounded-xl bg-white/10 border border-white/10 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all"
+              onChange={(e) => handleSearchChange(e.target.value)}
+              className="w-full pl-12 pr-20 py-3 rounded-xl bg-white/10 border border-white/10 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all"
             />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery("")}
-                className="absolute right-4 top-1/2 -translate-y-1/2 p-1 hover:bg-white/10 rounded-full transition-colors"
-              >
-                <X className="w-4 h-4 text-gray-400" />
-              </button>
-            )}
+            <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+              {isSearchingYouTube && (
+                <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
+              )}
+              {searchQuery && !isSearchingYouTube && (
+                <button
+                  onClick={() => {
+                    setSearchQuery("");
+                    setYoutubeSearchResults([]);
+                    setShowYouTubeSearch(false);
+                  }}
+                  className="p-1 hover:bg-white/10 rounded-full transition-colors"
+                >
+                  <X className="w-4 h-4 text-gray-400" />
+                </button>
+              )}
+            </div>
           </div>
 
+          {/* Search Hint */}
+          {searchQuery.trim() && searchQuery.length < 3 && (
+            <div className="mb-4 text-sm text-gray-500">
+              Type at least 3 characters to search YouTube...
+            </div>
+          )}
+
+          {/* Search Error */}
+          {searchError && (
+            <div className="mb-4 text-sm text-amber-400 flex items-center gap-2">
+              <span>⚠️</span>
+              {searchError}
+            </div>
+          )}
+
           {/* Search Results Count */}
-          {searchQuery.trim() && (
-            <div className="mb-4 text-sm text-gray-400">
-              {totalSearchResults === 0 ? (
+          {searchQuery.trim() && searchQuery.length >= 3 && (
+            <div className="mb-4 text-sm text-gray-400 flex items-center gap-2">
+              {isSearchingYouTube ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Searching YouTube...
+                </span>
+              ) : showYouTubeSearch && youtubeSearchResults.length > 0 ? (
+                <span className="flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-red-500" />
+                  Found {youtubeSearchResults.length} YouTube video{youtubeSearchResults.length !== 1 ? 's' : ''} + {totalSearchResults} curated
+                </span>
+              ) : totalSearchResults === 0 && youtubeSearchResults.length === 0 ? (
                 <span>No results found for &quot;{searchQuery}&quot;</span>
               ) : (
-                <span>Found {totalSearchResults} video{totalSearchResults !== 1 ? 's' : ''} matching &quot;{searchQuery}&quot;</span>
+                <span>Found {totalSearchResults} curated video{totalSearchResults !== 1 ? 's' : ''} matching &quot;{searchQuery}&quot;</span>
               )}
             </div>
           )}
@@ -1098,8 +1390,54 @@ export default function LibraryPage() {
           </div>
         )}
 
+        {/* YouTube Search Results Section */}
+        {showYouTubeSearch && youtubeSearchResults.length > 0 && (
+          <div className="mb-10 px-4">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-600 to-red-700 flex items-center justify-center">
+                  <Youtube className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-white">YouTube Results</h2>
+                  <p className="text-xs text-gray-400">Live search results from YouTube</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handlePlayAllYouTubeResults}
+                  className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 transition-colors text-sm"
+                >
+                  <Play className="w-4 h-4" />
+                  Play All
+                </button>
+              </div>
+            </div>
+
+            {/* YouTube Results Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {youtubeSearchResults.map((result) => (
+                <YouTubeSearchResultCard
+                  key={result.id}
+                  result={result}
+                  onPlay={() => handlePlayYouTubeResult(result)}
+                  onAddToQueue={() => handleAddYouTubeToQueue(result)}
+                  isCurrentlyPlaying={currentVideo?.videoId === result.videoId}
+                />
+              ))}
+            </div>
+
+            {/* Divider */}
+            <div className="mt-8 mb-4 border-t border-white/10 pt-4">
+              <p className="text-sm text-gray-400 text-center">
+                Curated collections below
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* No results message */}
-        {searchQuery.trim() && totalSearchResults === 0 && (
+        {searchQuery.trim() && searchQuery.length >= 3 && totalSearchResults === 0 && youtubeSearchResults.length === 0 && !isSearchingYouTube && (
           <div className="flex flex-col items-center justify-center py-20 px-4">
             <Search className="w-16 h-16 text-gray-600 mb-4" />
             <h3 className="text-xl font-semibold text-white mb-2">No videos found</h3>
@@ -1107,7 +1445,11 @@ export default function LibraryPage() {
               Try searching for something else, or browse our curated categories below.
             </p>
             <button
-              onClick={() => setSearchQuery("")}
+              onClick={() => {
+                setSearchQuery("");
+                setYoutubeSearchResults([]);
+                setShowYouTubeSearch(false);
+              }}
               className="mt-4 px-6 py-2 rounded-full bg-purple-600 hover:bg-purple-700 text-white text-sm transition-colors"
             >
               Clear search

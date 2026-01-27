@@ -160,7 +160,25 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       let generatedContent: Prisma.InputJsonValue = {};
 
       const prompts: Record<NotebookOutputType, string> = {
-        SUMMARY: `Create a comprehensive summary of the following sources. Include key points, main themes, and important details. Format as JSON with fields: summary (string), keyPoints (array of strings), themes (array of strings).`,
+        SUMMARY: `Create an extremely detailed and thorough summary of the following sources.
+
+IMPORTANT LENGTH REQUIREMENTS:
+- The summary MUST be at least 400-600 words (4-6 substantial paragraphs)
+- Include 8-12 key points covering ALL major topics from the sources
+- Extract 4-8 main themes
+
+STRUCTURE:
+1. Opening paragraph: Provide context about what the content covers and why it matters
+2. Body paragraphs: Explain each major topic in detail, including:
+   - Core concepts and definitions
+   - Important relationships and connections between ideas
+   - Specific examples, data, or evidence from the sources
+   - Practical applications or implications
+3. Concluding paragraph: Synthesize the key takeaways
+
+For keyPoints: Make each point substantive (1-2 sentences), not just single phrases. Each key point should explain a concept, not just name it.
+
+Format as JSON with fields: summary (string - 400-600 words minimum), keyPoints (array of 8-12 detailed strings), themes (array of 4-8 strings).`,
         STUDY_GUIDE: `Create a detailed study guide from these sources. Include: topics to study, key concepts, important terms with definitions, and review questions. Format as JSON with fields: topics (array), concepts (array), terms (array of {term, definition}), reviewQuestions (array).`,
         FAQ: `Generate frequently asked questions based on these sources. Create 10-15 Q&A pairs covering the main topics. Format as JSON with field: faqs (array of {question, answer}).`,
         BRIEFING_DOC: `Create an executive briefing document summarizing these sources. Include: executive summary, key findings, recommendations, and action items. Format as JSON with fields: executiveSummary, keyFindings (array), recommendations (array), actionItems (array).`,

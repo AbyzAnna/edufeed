@@ -106,45 +106,154 @@ function polarToCartesian(centerX: number, centerY: number, radius: number, angl
   };
 }
 
-// Generate curved path between two points
+// Generate smooth curved path between two points with better control
 function generateCurvedPath(
   start: Position,
   end: Position,
-  curvature: number = 0.3
+  curvature: number = 0.3,
+  depth: number = 1
 ): string {
-  const midX = (start.x + end.x) / 2;
-  const midY = (start.y + end.y) / 2;
-
-  // Calculate perpendicular offset for curve control point
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   const length = Math.sqrt(dx * dx + dy * dy);
 
-  // Perpendicular vector
+  if (length < 1) {
+    return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+  }
+
+  // For center-to-branch connections, use smooth S-curve
+  if (depth === 1) {
+    // Calculate control points for a smooth bezier
+    const cp1x = start.x + dx * 0.4;
+    const cp1y = start.y + dy * 0.15;
+    const cp2x = start.x + dx * 0.6;
+    const cp2y = end.y - dy * 0.15;
+    return `M ${start.x} ${start.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${end.x} ${end.y}`;
+  }
+
+  // For branch-to-subtopic, use quadratic curve
+  const midX = (start.x + end.x) / 2;
+  const midY = (start.y + end.y) / 2;
+
+  // Perpendicular offset for gentle curve
   const px = -dy / length;
   const py = dx / length;
+  const curveOffset = length * curvature * 0.5;
 
-  // Control point with curvature
-  const controlX = midX + px * length * curvature;
-  const controlY = midY + py * length * curvature;
+  const controlX = midX + px * curveOffset;
+  const controlY = midY + py * curveOffset;
 
   return `M ${start.x} ${start.y} Q ${controlX} ${controlY} ${end.x} ${end.y}`;
 }
 
-// Generate organic bezier path
-function generateOrganicPath(start: Position, end: Position): string {
+// Generate organic bezier path with natural flow
+function generateOrganicPath(start: Position, end: Position, depth: number = 1): string {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
+  const length = Math.sqrt(dx * dx + dy * dy);
 
-  const cp1x = start.x + dx * 0.4;
+  if (length < 1) {
+    return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+  }
+
+  // Organic curves follow the natural flow direction
+  const tension = depth === 1 ? 0.35 : 0.25;
+
+  const cp1x = start.x + dx * tension;
   const cp1y = start.y + dy * 0.1;
-  const cp2x = start.x + dx * 0.6;
+  const cp2x = end.x - dx * tension;
   const cp2y = end.y - dy * 0.1;
 
   return `M ${start.x} ${start.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${end.x} ${end.y}`;
 }
 
+// Generate tree-style elbow path with rounded corners
+function generateTreePath(start: Position, end: Position, depth: number = 1): string {
+  const dx = end.x - start.x;
+  const midX = start.x + dx * 0.5;
+  const cornerRadius = Math.min(15, Math.abs(end.y - start.y) / 4, Math.abs(dx) / 4);
+
+  if (Math.abs(end.y - start.y) < cornerRadius * 2 || cornerRadius < 2) {
+    // Nearly horizontal - just use straight line with slight curve
+    return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+  }
+
+  const direction = end.y > start.y ? 1 : -1;
+
+  // Create rounded elbow
+  return `M ${start.x} ${start.y}
+          H ${midX - cornerRadius}
+          Q ${midX} ${start.y} ${midX} ${start.y + direction * cornerRadius}
+          V ${end.y - direction * cornerRadius}
+          Q ${midX} ${end.y} ${midX + cornerRadius} ${end.y}
+          H ${end.x}`;
+}
+
 // ==================== Layout Calculators ====================
+
+// Calculate node width based on text length
+function calculateNodeWidth(text: string, depth: number): number {
+  const charWidth = depth === 0 ? 10 : depth === 1 ? 8 : 7;
+  const padding = depth === 0 ? 60 : depth === 1 ? 50 : 40;
+  const minWidth = depth === 0 ? 160 : depth === 1 ? 120 : 100;
+  const maxWidth = depth === 0 ? 220 : depth === 1 ? 180 : 160;
+  return Math.min(maxWidth, Math.max(minWidth, text.length * charWidth + padding));
+}
+
+// Check if two rectangles overlap with padding
+function nodesOverlap(
+  node1: { x: number; y: number; width: number; height: number },
+  node2: { x: number; y: number; width: number; height: number },
+  padding: number = 20
+): boolean {
+  const halfW1 = node1.width / 2 + padding;
+  const halfH1 = node1.height / 2 + padding;
+  const halfW2 = node2.width / 2 + padding;
+  const halfH2 = node2.height / 2 + padding;
+
+  return Math.abs(node1.x - node2.x) < halfW1 + halfW2 &&
+         Math.abs(node1.y - node2.y) < halfH1 + halfH2;
+}
+
+// Resolve overlaps by pushing nodes outward
+function resolveOverlaps(nodes: NodeLayout[], iterations: number = 5): void {
+  for (let iter = 0; iter < iterations; iter++) {
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const nodeA = nodes[i];
+        const nodeB = nodes[j];
+
+        // Skip center node and parent-child pairs
+        if (nodeA.depth === 0 || nodeB.depth === 0) continue;
+        if (nodeA.parentId === nodeB.id || nodeB.parentId === nodeA.id) continue;
+
+        if (nodesOverlap(nodeA, nodeB, 15)) {
+          const dx = nodeB.x - nodeA.x;
+          const dy = nodeB.y - nodeA.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+          // Push apart with more force
+          const pushForce = 25;
+          const pushX = (dx / dist) * pushForce;
+          const pushY = (dy / dist) * pushForce;
+
+          // Push nodes in opposite directions
+          if (nodeA.depth === nodeB.depth) {
+            nodeA.x -= pushX;
+            nodeA.y -= pushY;
+            nodeB.x += pushX;
+            nodeB.y += pushY;
+          } else {
+            // Push the deeper node more
+            const deeper = nodeA.depth > nodeB.depth ? nodeA : nodeB;
+            deeper.x += (deeper === nodeA ? -1 : 1) * pushX * 2;
+            deeper.y += (deeper === nodeA ? -1 : 1) * pushY * 2;
+          }
+        }
+      }
+    }
+  }
+}
 
 function calculateRadialLayout(
   data: MindMapData,
@@ -155,15 +264,16 @@ function calculateRadialLayout(
   const layouts: NodeLayout[] = [];
   const branchCount = data.branches.length;
 
-  // Central node
+  // Central node - larger and more prominent
+  const centerWidth = calculateNodeWidth(data.centralTopic, 0);
   const centerNode: NodeLayout = {
     id: "center",
     topic: data.centralTopic,
     description: data.description,
     x: centerX,
     y: centerY,
-    width: 180,
-    height: 60,
+    width: centerWidth,
+    height: 70,
     depth: 0,
     parentId: null,
     color: CENTER_COLOR.primary,
@@ -173,16 +283,30 @@ function calculateRadialLayout(
   };
   layouts.push(centerNode);
 
-  // Branch nodes in radial layout
-  const baseRadius = 220;
+  // Calculate total expanded subtopics to determine radius
+  let totalExpandedSubtopics = 0;
+  data.branches.forEach((branch, index) => {
+    if (expandedNodes.has(`branch-${index}`) && branch.subtopics) {
+      totalExpandedSubtopics += branch.subtopics.length;
+    }
+  });
+
+  // Dynamic base radius based on content - much larger for better spacing
+  const baseRadius = Math.max(280, 180 + branchCount * 25 + totalExpandedSubtopics * 8);
   const angleStep = 360 / branchCount;
 
+  // Start angle offset to position first branch at top
+  const startAngleOffset = -90;
+
+  // First pass: create branch nodes
+  const branchNodes: NodeLayout[] = [];
   data.branches.forEach((branch, index) => {
-    const angle = index * angleStep;
+    const angle = startAngleOffset + index * angleStep;
     const pos = polarToCartesian(centerX, centerY, baseRadius, angle);
     const colorSet = BRANCH_COLORS[index % BRANCH_COLORS.length];
     const branchId = `branch-${index}`;
     const isExpanded = expandedNodes.has(branchId);
+    const nodeWidth = calculateNodeWidth(branch.topic, 1);
 
     const branchNode: NodeLayout = {
       id: branchId,
@@ -191,8 +315,8 @@ function calculateRadialLayout(
       description: branch.description,
       x: pos.x,
       y: pos.y,
-      width: 160,
-      height: 50,
+      width: nodeWidth,
+      height: 52,
       depth: 1,
       parentId: "center",
       color: colorSet.primary,
@@ -201,31 +325,46 @@ function calculateRadialLayout(
       isExpanded,
       isVisible: true,
     };
+    branchNodes.push(branchNode);
+  });
 
-    // Add subtopic nodes if branch is expanded
-    if (isExpanded && branch.subtopics && branch.subtopics.length > 0) {
-      const subtopicRadius = 120;
-      const subtopicAngleSpread = Math.min(60, 20 * branch.subtopics.length);
-      const startAngle = angle - subtopicAngleSpread / 2;
-      const subtopicAngleStep = branch.subtopics.length > 1
-        ? subtopicAngleSpread / (branch.subtopics.length - 1)
+  // Second pass: add subtopics with smart positioning
+  branchNodes.forEach((branchNode, index) => {
+    const branch = data.branches[index];
+    const colorSet = BRANCH_COLORS[index % BRANCH_COLORS.length];
+
+    if (branchNode.isExpanded && branch.subtopics && branch.subtopics.length > 0) {
+      const subtopicCount = branch.subtopics.length;
+      // Subtopic radius proportional to count - much larger spacing
+      const subtopicRadius = Math.max(140, 100 + subtopicCount * 20);
+
+      // Calculate angle spread based on available space
+      // More subtopics = wider spread, but capped to avoid overlap with neighbors
+      const maxAngleSpread = Math.min(120, angleStep - 20);
+      const subtopicAngleSpread = Math.min(maxAngleSpread, 25 * subtopicCount);
+
+      const baseAngle = branchNode.angle || 0;
+      const startAngle = baseAngle - subtopicAngleSpread / 2;
+      const subtopicAngleStep = subtopicCount > 1
+        ? subtopicAngleSpread / (subtopicCount - 1)
         : 0;
 
       branch.subtopics.forEach((subtopic, subIndex) => {
-        const subtopicAngle = branch.subtopics!.length === 1
-          ? angle
+        const subtopicAngle = subtopicCount === 1
+          ? baseAngle
           : startAngle + subIndex * subtopicAngleStep;
-        const subPos = polarToCartesian(pos.x, pos.y, subtopicRadius, subtopicAngle);
+        const subPos = polarToCartesian(branchNode.x, branchNode.y, subtopicRadius, subtopicAngle);
+        const nodeWidth = calculateNodeWidth(subtopic, 2);
 
         const subtopicNode: NodeLayout = {
-          id: `${branchId}-sub-${subIndex}`,
+          id: `${branchNode.id}-sub-${subIndex}`,
           topic: subtopic,
           x: subPos.x,
           y: subPos.y,
-          width: 140,
-          height: 36,
+          width: nodeWidth,
+          height: 38,
           depth: 2,
-          parentId: branchId,
+          parentId: branchNode.id,
           color: colorSet.primary,
           angle: subtopicAngle,
           children: [],
@@ -240,6 +379,9 @@ function calculateRadialLayout(
     layouts.push(branchNode);
   });
 
+  // Resolve any remaining overlaps
+  resolveOverlaps(layouts, 8);
+
   return layouts;
 }
 
@@ -250,18 +392,40 @@ function calculateTreeLayout(
   expandedNodes: Set<string>
 ): NodeLayout[] {
   const layouts: NodeLayout[] = [];
-  const horizontalSpacing = 280;
-  const verticalSpacing = 100;
+  const horizontalSpacing = 320;
+  const branchVerticalGap = 30;
+  const subtopicVerticalGap = 12;
 
-  // Central node (left side)
+  // First pass: calculate heights for each branch
+  const branchHeights: number[] = [];
+  data.branches.forEach((branch, index) => {
+    const branchId = `branch-${index}`;
+    const isExpanded = expandedNodes.has(branchId);
+    const subtopicCount = isExpanded && branch.subtopics ? branch.subtopics.length : 0;
+    // Height = branch node + subtopics
+    const subtopicTotalHeight = subtopicCount > 0
+      ? subtopicCount * 42 + (subtopicCount - 1) * subtopicVerticalGap
+      : 0;
+    branchHeights.push(Math.max(56, subtopicTotalHeight));
+  });
+
+  // Calculate total height
+  const totalHeight = branchHeights.reduce((sum, h) => sum + h, 0) +
+                     (branchHeights.length - 1) * branchVerticalGap;
+
+  // Central node - positioned to the left, vertically centered
+  const centerWidth = calculateNodeWidth(data.centralTopic, 0);
+  const centerX = startX + 120;
+  const centerY = startY + totalHeight / 2 + 40;
+
   const centerNode: NodeLayout = {
     id: "center",
     topic: data.centralTopic,
     description: data.description,
-    x: startX + 100,
-    y: startY + (data.branches.length * verticalSpacing) / 2,
-    width: 180,
-    height: 60,
+    x: centerX,
+    y: centerY,
+    width: centerWidth,
+    height: 70,
     depth: 0,
     parentId: null,
     color: CENTER_COLOR.primary,
@@ -271,28 +435,29 @@ function calculateTreeLayout(
   };
   layouts.push(centerNode);
 
-  // Calculate total height needed
-  let currentY = startY;
+  // Second pass: position branches and subtopics
+  let currentY = startY + 40;
 
   data.branches.forEach((branch, index) => {
     const colorSet = BRANCH_COLORS[index % BRANCH_COLORS.length];
     const branchId = `branch-${index}`;
     const isExpanded = expandedNodes.has(branchId);
-    const subtopicCount = isExpanded && branch.subtopics ? branch.subtopics.length : 0;
+    const branchWidth = calculateNodeWidth(branch.topic, 1);
+    const branchHeight = branchHeights[index];
 
-    // Calculate branch position
-    const branchHeight = Math.max(1, subtopicCount) * 50;
-    const branchCenterY = currentY + branchHeight / 2;
+    // Branch positioned at the center of its allocated space
+    const branchX = centerX + horizontalSpacing;
+    const branchY = currentY + branchHeight / 2;
 
     const branchNode: NodeLayout = {
       id: branchId,
       topic: branch.topic,
       subtopics: branch.subtopics,
       description: branch.description,
-      x: startX + 100 + horizontalSpacing,
-      y: branchCenterY,
-      width: 160,
-      height: 50,
+      x: branchX,
+      y: branchY,
+      width: branchWidth,
+      height: 52,
       depth: 1,
       parentId: "center",
       color: colorSet.primary,
@@ -301,16 +466,21 @@ function calculateTreeLayout(
       isVisible: true,
     };
 
-    // Add subtopics
+    // Add subtopics - aligned vertically with proper spacing
     if (isExpanded && branch.subtopics && branch.subtopics.length > 0) {
+      const subtopicCount = branch.subtopics.length;
+      const subtopicTotalHeight = subtopicCount * 42 + (subtopicCount - 1) * subtopicVerticalGap;
+      let subtopicY = branchY - subtopicTotalHeight / 2 + 21; // Start from top of allocated space
+
       branch.subtopics.forEach((subtopic, subIndex) => {
+        const subtopicWidth = calculateNodeWidth(subtopic, 2);
         const subtopicNode: NodeLayout = {
           id: `${branchId}-sub-${subIndex}`,
           topic: subtopic,
-          x: startX + 100 + horizontalSpacing * 2,
-          y: currentY + subIndex * 50 + 25,
-          width: 140,
-          height: 36,
+          x: branchX + horizontalSpacing - 40,
+          y: subtopicY,
+          width: subtopicWidth,
+          height: 40,
           depth: 2,
           parentId: branchId,
           color: colorSet.primary,
@@ -320,11 +490,12 @@ function calculateTreeLayout(
         };
         branchNode.children.push(subtopicNode);
         layouts.push(subtopicNode);
+        subtopicY += 42 + subtopicVerticalGap;
       });
     }
 
     layouts.push(branchNode);
-    currentY += branchHeight + 40;
+    currentY += branchHeight + branchVerticalGap;
   });
 
   return layouts;
@@ -339,14 +510,15 @@ function calculateOrganicLayout(
   const layouts: NodeLayout[] = [];
   const branchCount = data.branches.length;
 
-  // Central node with slight offset for visual interest
+  // Central node
+  const centerWidth = calculateNodeWidth(data.centralTopic, 0);
   const centerNode: NodeLayout = {
     id: "center",
     topic: data.centralTopic,
     description: data.description,
     x: centerX,
     y: centerY,
-    width: 200,
+    width: centerWidth,
     height: 70,
     depth: 0,
     parentId: null,
@@ -357,20 +529,32 @@ function calculateOrganicLayout(
   };
   layouts.push(centerNode);
 
-  // Organic placement with varying radii and angles
-  const goldenAngle = 137.5; // Golden angle for natural distribution
-
+  // Calculate total expanded subtopics for radius adjustment
+  let totalExpandedSubtopics = 0;
   data.branches.forEach((branch, index) => {
-    // Use golden angle for natural spiral distribution
-    const angle = index * goldenAngle;
-    // Varying radius based on index for organic feel
-    const radiusVariation = 1 + (Math.sin(index * 0.7) * 0.2);
-    const baseRadius = 200 * radiusVariation + (index % 2) * 40;
-    const pos = polarToCartesian(centerX, centerY, baseRadius, angle);
+    if (expandedNodes.has(`branch-${index}`) && branch.subtopics) {
+      totalExpandedSubtopics += branch.subtopics.length;
+    }
+  });
+
+  // Organic placement using golden angle spiral with better spacing
+  const goldenAngle = 137.508; // Golden angle for natural Fibonacci-like distribution
+  const baseRadius = Math.max(260, 200 + branchCount * 20 + totalExpandedSubtopics * 6);
+
+  // Create branch nodes first
+  const branchNodes: NodeLayout[] = [];
+  data.branches.forEach((branch, index) => {
+    // Golden angle spiral with offset for better initial positioning
+    const angle = -90 + index * goldenAngle;
+    // Fibonacci-like radius variation - grows outward slightly for each branch
+    const radiusMultiplier = 1 + (index * 0.08);
+    const radius = baseRadius * radiusMultiplier;
+    const pos = polarToCartesian(centerX, centerY, radius, angle);
 
     const colorSet = BRANCH_COLORS[index % BRANCH_COLORS.length];
     const branchId = `branch-${index}`;
     const isExpanded = expandedNodes.has(branchId);
+    const nodeWidth = calculateNodeWidth(branch.topic, 1);
 
     const branchNode: NodeLayout = {
       id: branchId,
@@ -379,8 +563,8 @@ function calculateOrganicLayout(
       description: branch.description,
       x: pos.x,
       y: pos.y,
-      width: 150 + (index % 3) * 10,
-      height: 45 + (index % 2) * 10,
+      width: nodeWidth,
+      height: 52,
       depth: 1,
       parentId: "center",
       color: colorSet.primary,
@@ -389,23 +573,44 @@ function calculateOrganicLayout(
       isExpanded,
       isVisible: true,
     };
+    branchNodes.push(branchNode);
+  });
 
-    // Organic subtopic placement
-    if (isExpanded && branch.subtopics && branch.subtopics.length > 0) {
+  // Add subtopics with organic fan-out pattern
+  branchNodes.forEach((branchNode, index) => {
+    const branch = data.branches[index];
+    const colorSet = BRANCH_COLORS[index % BRANCH_COLORS.length];
+
+    if (branchNode.isExpanded && branch.subtopics && branch.subtopics.length > 0) {
+      const subtopicCount = branch.subtopics.length;
+      const baseAngle = branchNode.angle || 0;
+
+      // Calculate direction away from center for subtopic fan
+      const directionFromCenter = baseAngle;
+
+      // Fan out subtopics in the direction away from center
+      const fanSpread = Math.min(90, 20 + subtopicCount * 15);
+      const startAngle = directionFromCenter - fanSpread / 2;
+      const angleStep = subtopicCount > 1 ? fanSpread / (subtopicCount - 1) : 0;
+
       branch.subtopics.forEach((subtopic, subIndex) => {
-        const subtopicAngle = angle + (subIndex - branch.subtopics!.length / 2) * 25;
-        const subtopicRadius = 100 + subIndex * 15;
-        const subPos = polarToCartesian(pos.x, pos.y, subtopicRadius, subtopicAngle);
+        const subtopicAngle = subtopicCount === 1
+          ? directionFromCenter
+          : startAngle + subIndex * angleStep;
+        // Varying radius for organic feel
+        const subtopicRadius = 130 + (subIndex % 2) * 20;
+        const subPos = polarToCartesian(branchNode.x, branchNode.y, subtopicRadius, subtopicAngle);
+        const nodeWidth = calculateNodeWidth(subtopic, 2);
 
         const subtopicNode: NodeLayout = {
-          id: `${branchId}-sub-${subIndex}`,
+          id: `${branchNode.id}-sub-${subIndex}`,
           topic: subtopic,
           x: subPos.x,
           y: subPos.y,
-          width: 130,
-          height: 34,
+          width: nodeWidth,
+          height: 38,
           depth: 2,
-          parentId: branchId,
+          parentId: branchNode.id,
           color: colorSet.primary,
           angle: subtopicAngle,
           children: [],
@@ -419,6 +624,9 @@ function calculateOrganicLayout(
 
     layouts.push(branchNode);
   });
+
+  // Resolve overlaps with more iterations for organic layout
+  resolveOverlaps(layouts, 10);
 
   return layouts;
 }
@@ -446,32 +654,34 @@ function ConnectionLine({ start, end, color, depth, viewMode, animated = true }:
 
   const path = useMemo(() => {
     if (viewMode === "tree") {
-      // Elbow connection for tree view
-      const midX = (start.x + end.x) / 2;
-      return `M ${start.x} ${start.y} H ${midX} V ${end.y} H ${end.x}`;
+      return generateTreePath(start, end, depth);
     } else if (viewMode === "organic") {
-      return generateOrganicPath(start, end);
+      return generateOrganicPath(start, end, depth);
     } else {
-      return generateCurvedPath(start, end, depth === 1 ? 0.15 : 0.25);
+      // Radial view
+      return generateCurvedPath(start, end, depth === 1 ? 0.2 : 0.3, depth);
     }
   }, [start, end, viewMode, depth]);
 
-  const strokeWidth = depth === 1 ? 3 : 2;
-  const opacity = depth === 1 ? 0.8 : 0.5;
+  // Better stroke widths for visual hierarchy
+  const strokeWidth = depth === 1 ? 2.5 : 1.8;
+  const opacity = depth === 1 ? 0.85 : 0.6;
+  const glowOpacity = depth === 1 ? 0.2 : 0.1;
 
   return (
     <g>
-      {/* Glow effect */}
+      {/* Glow effect - softer and more subtle */}
       <path
         d={path}
         fill="none"
         stroke={color}
-        strokeWidth={strokeWidth + 4}
+        strokeWidth={strokeWidth + 6}
         strokeLinecap="round"
-        opacity={0.15}
-        filter="blur(4px)"
+        strokeLinejoin="round"
+        opacity={glowOpacity}
+        style={{ filter: "blur(6px)" }}
       />
-      {/* Main line */}
+      {/* Main line with gradient effect */}
       <path
         ref={pathRef}
         d={path}
@@ -479,21 +689,14 @@ function ConnectionLine({ start, end, color, depth, viewMode, animated = true }:
         stroke={color}
         strokeWidth={strokeWidth}
         strokeLinecap="round"
+        strokeLinejoin="round"
         opacity={opacity}
-        strokeDasharray={animated ? pathLength : undefined}
+        strokeDasharray={animated && pathLength > 0 ? pathLength : undefined}
         strokeDashoffset={animated ? 0 : undefined}
         style={{
-          transition: animated ? "stroke-dashoffset 0.8s ease-out" : undefined,
+          transition: animated ? "stroke-dashoffset 1s ease-out" : undefined,
         }}
       />
-      {/* Animated dot */}
-      {animated && depth === 1 && (
-        <circle r="3" fill={color}>
-          <animateMotion dur="3s" repeatCount="indefinite">
-            <mpath href={`#${path}`} />
-          </animateMotion>
-        </circle>
-      )}
     </g>
   );
 }
@@ -520,35 +723,41 @@ function MindMapNodeComponent({
     ? CENTER_COLOR
     : BRANCH_COLORS.find(c => c.primary === node.color) || BRANCH_COLORS[0];
 
-  // Different styling based on depth
-  const getNodeStyle = () => {
+  // Enhanced styling based on depth with better visual hierarchy
+  const getNodeStyle = (): React.CSSProperties => {
     if (node.depth === 0) {
+      // Central node - prominent and glowing
       return {
-        background: `linear-gradient(135deg, ${colorSet.primary}, #ea580c)`,
+        background: `linear-gradient(135deg, ${colorSet.primary} 0%, #ea580c 50%, #dc2626 100%)`,
         boxShadow: isHovered
-          ? `0 0 30px ${colorSet.glow}, 0 0 60px ${colorSet.glow}`
-          : `0 8px 32px ${colorSet.glow}`,
-        transform: isHovered ? "scale(1.05)" : "scale(1)",
+          ? `0 0 40px ${colorSet.glow}, 0 0 80px ${colorSet.glow}, inset 0 1px 0 rgba(255,255,255,0.2)`
+          : `0 8px 32px ${colorSet.glow}, 0 0 20px ${colorSet.glow}, inset 0 1px 0 rgba(255,255,255,0.15)`,
+        transform: isHovered ? "scale(1.06)" : "scale(1)",
+        border: "1px solid rgba(255,255,255,0.2)",
       };
     } else if (node.depth === 1) {
+      // Branch nodes - solid with clear hierarchy
       return {
         background: isHovered
-          ? `linear-gradient(135deg, ${colorSet.primary}40, ${colorSet.primary}20)`
-          : colorSet.bg,
-        border: `2px solid ${colorSet.primary}60`,
+          ? `linear-gradient(135deg, ${colorSet.primary}50, ${colorSet.primary}30)`
+          : `linear-gradient(135deg, ${colorSet.primary}30, ${colorSet.primary}15)`,
+        border: `2px solid ${colorSet.primary}70`,
         boxShadow: isHovered
-          ? `0 0 20px ${colorSet.glow}`
-          : `0 4px 16px rgba(0,0,0,0.2)`,
-        transform: isHovered ? "scale(1.03)" : "scale(1)",
+          ? `0 0 24px ${colorSet.glow}, 0 4px 20px rgba(0,0,0,0.3)`
+          : `0 4px 16px rgba(0,0,0,0.25), 0 0 8px ${colorSet.glow}`,
+        transform: isHovered ? "scale(1.04)" : "scale(1)",
+        backdropFilter: "blur(8px)",
       };
     } else {
+      // Subtopic nodes - lighter, more subtle
       return {
-        background: `${colorSet.bg}`,
-        border: `1px solid ${colorSet.primary}40`,
+        background: `linear-gradient(135deg, ${colorSet.bg}, ${colorSet.primary}10)`,
+        border: `1.5px solid ${colorSet.primary}50`,
         boxShadow: isHovered
-          ? `0 0 12px ${colorSet.glow}`
-          : "0 2px 8px rgba(0,0,0,0.15)",
-        transform: isHovered ? "scale(1.02)" : "scale(1)",
+          ? `0 0 16px ${colorSet.glow}, 0 2px 12px rgba(0,0,0,0.2)`
+          : `0 2px 10px rgba(0,0,0,0.15)`,
+        transform: isHovered ? "scale(1.03)" : "scale(1)",
+        backdropFilter: "blur(4px)",
       };
     }
   };
@@ -564,11 +773,12 @@ function MindMapNodeComponent({
       style={{ overflow: "visible" }}
     >
       <div
-        className="w-full h-full flex items-center justify-center cursor-pointer transition-all duration-300 ease-out"
+        className="w-full h-full flex items-center justify-center cursor-pointer"
         style={{
           ...style,
-          borderRadius: node.depth === 0 ? "20px" : node.depth === 1 ? "16px" : "12px",
-          padding: node.depth === 0 ? "16px 24px" : node.depth === 1 ? "12px 20px" : "8px 16px",
+          borderRadius: node.depth === 0 ? "24px" : node.depth === 1 ? "18px" : "14px",
+          padding: node.depth === 0 ? "16px 28px" : node.depth === 1 ? "12px 20px" : "8px 14px",
+          transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
         }}
         onMouseEnter={() => onHover(node.id)}
         onMouseLeave={() => onHover(null)}
@@ -584,10 +794,13 @@ function MindMapNodeComponent({
           {/* Expand/collapse indicator for branch nodes */}
           {hasChildren && node.depth === 1 && (
             <button
-              className="flex-shrink-0 p-1 rounded-full hover:bg-white/10 transition-colors"
+              className="flex-shrink-0 p-1 rounded-full hover:bg-white/15 transition-all duration-200"
               onClick={(e) => {
                 e.stopPropagation();
                 onToggleExpand(node.id);
+              }}
+              style={{
+                backgroundColor: node.isExpanded ? `${colorSet.primary}25` : "transparent",
               }}
             >
               {node.isExpanded ? (
@@ -598,31 +811,44 @@ function MindMapNodeComponent({
             </button>
           )}
 
-          {/* Node text */}
+          {/* Node text with better typography */}
           <span
-            className={`truncate ${
+            className={`leading-tight ${
               node.depth === 0
-                ? "text-white font-bold text-lg"
+                ? "text-white font-bold text-base tracking-tight"
                 : node.depth === 1
-                  ? "font-semibold text-base"
-                  : "text-sm"
+                  ? "font-semibold text-sm"
+                  : "text-xs font-medium"
             }`}
             style={{
               color: node.depth === 0 ? "#fff" : colorSet.primary,
-              textShadow: node.depth === 0 ? "0 2px 4px rgba(0,0,0,0.2)" : undefined,
+              textShadow: node.depth === 0
+                ? "0 2px 8px rgba(0,0,0,0.4)"
+                : node.depth === 1
+                  ? `0 1px 4px rgba(0,0,0,0.2)`
+                  : undefined,
+              display: "-webkit-box",
+              WebkitLineClamp: node.depth === 0 ? 2 : 1,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              wordBreak: "break-word",
             }}
             title={node.topic}
           >
             {node.topic}
           </span>
 
-          {/* Subtopic count badge */}
+          {/* Subtopic count badge - more prominent */}
           {hasChildren && node.depth === 1 && !node.isExpanded && (
             <span
-              className="flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-medium"
+              className="flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-bold"
               style={{
-                backgroundColor: `${colorSet.primary}30`,
+                backgroundColor: `${colorSet.primary}40`,
                 color: colorSet.primary,
+                border: `1px solid ${colorSet.primary}60`,
+                minWidth: "22px",
+                textAlign: "center",
               }}
             >
               {node.subtopics!.length}
@@ -662,12 +888,13 @@ export default function AdvancedMindMapViewer({ content }: AdvancedMindMapViewer
 
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>("radial");
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(0.85); // Slightly zoomed out for better overview
   const [pan, setPan] = useState<Position>({ x: 0, y: 0 });
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<NodeLayout | null>(null);
   const [showLabels, setShowLabels] = useState(true);
+  const [hasInitialized, setHasInitialized] = useState(false);
 
   // Refs
   const containerRef = useRef<HTMLDivElement>(null);
@@ -695,24 +922,84 @@ export default function AdvancedMindMapViewer({ content }: AdvancedMindMapViewer
     }
   }, []);
 
-  // Calculate layout
+  // Calculate layout with larger canvas for radial/organic views
+  const canvasSize = useMemo(() => {
+    if (!mindMapData) return { width: dimensions.width, height: dimensions.height };
+
+    const branchCount = mindMapData.branches.length;
+    const hasExpandedSubtopics = expandedNodes.size > 0;
+
+    // Calculate needed size based on content
+    if (viewMode === "radial" || viewMode === "organic") {
+      const baseSize = Math.max(1200, 800 + branchCount * 80);
+      const expandedBonus = hasExpandedSubtopics ? 400 : 0;
+      return {
+        width: Math.max(dimensions.width, baseSize + expandedBonus),
+        height: Math.max(dimensions.height, baseSize + expandedBonus),
+      };
+    }
+
+    // Tree view needs more horizontal space
+    return {
+      width: Math.max(dimensions.width, 1400),
+      height: Math.max(dimensions.height, branchCount * 120 + 200),
+    };
+  }, [mindMapData, viewMode, expandedNodes.size, dimensions]);
+
   const nodeLayouts = useMemo(() => {
     if (!mindMapData) return [];
 
-    const centerX = dimensions.width / 2;
-    const centerY = dimensions.height / 2;
+    const centerX = canvasSize.width / 2;
+    const centerY = canvasSize.height / 2;
 
     switch (viewMode) {
       case "radial":
         return calculateRadialLayout(mindMapData, centerX, centerY, expandedNodes);
       case "tree":
-        return calculateTreeLayout(mindMapData, 50, 50, expandedNodes);
+        return calculateTreeLayout(mindMapData, 80, 80, expandedNodes);
       case "organic":
         return calculateOrganicLayout(mindMapData, centerX, centerY, expandedNodes);
       default:
         return calculateRadialLayout(mindMapData, centerX, centerY, expandedNodes);
     }
-  }, [mindMapData, viewMode, dimensions, expandedNodes]);
+  }, [mindMapData, viewMode, canvasSize, expandedNodes]);
+
+  // Auto-fit content on first render
+  useEffect(() => {
+    if (!hasInitialized && nodeLayouts.length > 0 && dimensions.width > 0) {
+      // Calculate bounding box of all nodes
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      nodeLayouts.forEach(node => {
+        minX = Math.min(minX, node.x - node.width / 2);
+        maxX = Math.max(maxX, node.x + node.width / 2);
+        minY = Math.min(minY, node.y - node.height / 2);
+        maxY = Math.max(maxY, node.y + node.height / 2);
+      });
+
+      const contentWidth = maxX - minX + 100;
+      const contentHeight = maxY - minY + 100;
+
+      // Calculate optimal zoom to fit content
+      const zoomX = dimensions.width / contentWidth;
+      const zoomY = dimensions.height / contentHeight;
+      const optimalZoom = Math.min(zoomX, zoomY, 1) * 0.9; // 90% to leave some margin
+
+      setZoom(Math.max(0.4, Math.min(1, optimalZoom)));
+
+      // Center the content
+      const contentCenterX = (minX + maxX) / 2;
+      const contentCenterY = (minY + maxY) / 2;
+      const viewCenterX = dimensions.width / 2;
+      const viewCenterY = dimensions.height / 2;
+
+      setPan({
+        x: (viewCenterX - contentCenterX * optimalZoom),
+        y: (viewCenterY - contentCenterY * optimalZoom),
+      });
+
+      setHasInitialized(true);
+    }
+  }, [hasInitialized, nodeLayouts, dimensions]);
 
   // Generate connections
   const connections = useMemo(() => {
@@ -780,11 +1067,42 @@ export default function AdvancedMindMapViewer({ content }: AdvancedMindMapViewer
     });
   }, []);
 
-  // Reset view
+  // Reset view - re-center and fit content
   const resetView = useCallback(() => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
-  }, []);
+    if (nodeLayouts.length === 0 || dimensions.width === 0) {
+      setZoom(0.85);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+
+    // Calculate bounding box
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    nodeLayouts.forEach(node => {
+      minX = Math.min(minX, node.x - node.width / 2);
+      maxX = Math.max(maxX, node.x + node.width / 2);
+      minY = Math.min(minY, node.y - node.height / 2);
+      maxY = Math.max(maxY, node.y + node.height / 2);
+    });
+
+    const contentWidth = maxX - minX + 100;
+    const contentHeight = maxY - minY + 100;
+
+    const zoomX = dimensions.width / contentWidth;
+    const zoomY = dimensions.height / contentHeight;
+    const optimalZoom = Math.min(zoomX, zoomY, 1) * 0.9;
+
+    setZoom(Math.max(0.4, Math.min(1, optimalZoom)));
+
+    const contentCenterX = (minX + maxX) / 2;
+    const contentCenterY = (minY + maxY) / 2;
+    const viewCenterX = dimensions.width / 2;
+    const viewCenterY = dimensions.height / 2;
+
+    setPan({
+      x: viewCenterX - contentCenterX * optimalZoom,
+      y: viewCenterY - contentCenterY * optimalZoom,
+    });
+  }, [nodeLayouts, dimensions]);
 
   // Export as PNG
   const exportAsPng = useCallback(async () => {
@@ -797,8 +1115,8 @@ export default function AdvancedMindMapViewer({ content }: AdvancedMindMapViewer
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement("canvas");
-      canvas.width = dimensions.width * 2;
-      canvas.height = dimensions.height * 2;
+      canvas.width = canvasSize.width * 2;
+      canvas.height = canvasSize.height * 2;
       const ctx = canvas.getContext("2d");
       if (ctx) {
         ctx.fillStyle = "#0a0a0f";
@@ -968,8 +1286,8 @@ export default function AdvancedMindMapViewer({ content }: AdvancedMindMapViewer
 
         <svg
           ref={svgRef}
-          width={dimensions.width}
-          height={dimensions.height}
+          width={canvasSize.width}
+          height={canvasSize.height}
           className="absolute inset-0"
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,

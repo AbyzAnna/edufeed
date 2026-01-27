@@ -70,9 +70,9 @@ async function getFeedItems() {
     });
 
     // Transform to include isLiked and isBookmarked
-    const transformedItems = feedItems.map((item) => {
-      const likesArray = (item as { FeedLike?: { id: string }[] }).FeedLike ?? [];
-      const bookmarksArray = (item as { FeedBookmark?: { id: string }[] }).FeedBookmark ?? [];
+    const transformedItems = feedItems.map((item: typeof feedItems[number]) => {
+      const likesArray = (item as unknown as { FeedLike?: { id: string }[] }).FeedLike ?? [];
+      const bookmarksArray = (item as unknown as { FeedBookmark?: { id: string }[] }).FeedBookmark ?? [];
 
       return {
         ...item,

@@ -183,24 +183,26 @@ async function processPdf(fileUrl: string): Promise<ProcessResult> {
       throw fetchError;
     }
 
-    // Use pdf-parse v2 API with buffer
-    const { PDFParse } = await import("pdf-parse");
+    // Use unpdf for server-side PDF parsing (no worker issues)
+    const { extractText, getDocumentProxy } = await import("unpdf");
 
-    console.log('[PDF Processor] Parsing PDF content...');
-    const parser = new PDFParse(Buffer.from(pdfBuffer));
-    const result = await parser.getText();
+    console.log('[PDF Processor] Parsing PDF content with unpdf...');
+    const uint8Array = new Uint8Array(pdfBuffer);
 
-    const content = result.text.replace(/\s+/g, " ").trim();
+    // Extract text from PDF
+    const { text, totalPages } = await extractText(uint8Array, { mergePages: true });
+
+    const content = text.replace(/\s+/g, " ").trim();
     const wordCount = content.split(/\s+/).length;
-    console.log(`[PDF Processor] Extracted ${wordCount} words`);
+    console.log(`[PDF Processor] Extracted ${wordCount} words from ${totalPages} pages`);
 
-    // Get document info
+    // Get document info (optional)
     let info = {};
-    let numPages = 0;
+    const numPages = totalPages || 0;
     try {
-      const infoResult = await parser.getInfo();
-      info = infoResult.info || {};
-      numPages = infoResult.total || 0;
+      const doc = await getDocumentProxy(uint8Array);
+      const metadata = await doc.getMetadata();
+      info = metadata?.info || {};
     } catch {
       // Info extraction failed, continue with text only
       console.log('[PDF Processor] Could not extract PDF metadata');

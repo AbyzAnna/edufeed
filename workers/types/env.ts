@@ -23,6 +23,9 @@ export interface Env {
   // Secrets
   SUPABASE_SERVICE_ROLE_KEY: string;
   DATABASE_URL: string;
+
+  // YouTube API (public innertube key, but configurable for rotation)
+  YOUTUBE_INNERTUBE_API_KEY?: string;
 }
 
 // Types for API requests/responses

@@ -8,7 +8,7 @@ const TEST_USER = {
 
 test.describe('YouTube Source Addition Flow', () => {
   // Skip UI tests that require authentication until test users are set up
-  test.skip(({ }, testInfo) => true, 'Requires authentication setup');
+  test.skip(() => true, 'Requires authentication setup');
 
   // Before each test, login and navigate to notebooks
   test.beforeEach(async ({ page }) => {

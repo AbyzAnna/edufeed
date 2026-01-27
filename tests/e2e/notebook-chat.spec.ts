@@ -86,7 +86,7 @@ test.describe('Notebook Chat API', () => {
 
 test.describe('Notebook Chat Integration', () => {
   // These tests require authentication and a running app
-  test.skip(({ }, testInfo) => !process.env.RUN_INTEGRATION_TESTS,
+  test.skip(() => !process.env.RUN_INTEGRATION_TESTS,
     'Set RUN_INTEGRATION_TESTS=true to run integration tests');
 
   test.beforeEach(async ({ page }) => {

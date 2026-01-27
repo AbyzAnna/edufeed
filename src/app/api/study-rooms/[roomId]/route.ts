@@ -42,7 +42,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           select: { id: true, name: true, image: true },
         },
         Notebook: {
-          include: {
+          select: {
+            id: true,
+            title: true,
+            emoji: true,
             NotebookSource: {
               select: {
                 id: true,
@@ -87,7 +90,72 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Room not found" }, { status: 404 });
     }
 
-    return NextResponse.json(room);
+    // Get user info for messages
+    const messageUserIds = Array.from(new Set(room.StudyRoomMessage.map((m) => m.userId)));
+    const messageUsers = messageUserIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: messageUserIds } },
+          select: { id: true, name: true, image: true },
+        })
+      : [];
+    const userMap = Object.fromEntries(messageUsers.map((u) => [u.id, u]));
+
+    // Transform response to match frontend expectations
+    const response = {
+      id: room.id,
+      title: room.title,
+      description: room.description,
+      code: room.code,
+      isActive: room.isActive,
+      isPrivate: room.isPrivate,
+      maxParticipants: room.maxParticipants,
+      hostId: room.hostId,
+      notebookId: room.notebookId,
+      createdAt: room.createdAt,
+      endedAt: room.endedAt,
+      settings: room.settings,
+      // Map User to host
+      host: room.User,
+      // Map Notebook with proper structure
+      notebook: room.Notebook ? {
+        id: room.Notebook.id,
+        title: room.Notebook.title,
+        emoji: room.Notebook.emoji,
+        sources: room.Notebook.NotebookSource.map((source) => ({
+          id: source.id,
+          title: source.title,
+          type: source.type,
+          status: source.status,
+        })),
+      } : null,
+      // Map StudyRoomParticipant to participants
+      participants: room.StudyRoomParticipant.map((p) => ({
+        id: p.id,
+        userId: p.userId,
+        role: p.role,
+        status: p.status,
+        isAudioOn: p.isAudioOn,
+        isVideoOn: p.isVideoOn,
+        joinedAt: p.joinedAt,
+        leftAt: p.leftAt,
+        user: p.User,
+      })),
+      // Map StudyRoomMessage to messages with user data
+      messages: room.StudyRoomMessage.map((m) => ({
+        id: m.id,
+        type: m.type,
+        content: m.content,
+        createdAt: m.createdAt,
+        metadata: m.metadata,
+        replyToId: m.replyToId,
+        user: userMap[m.userId] || null,
+      })),
+      annotations: room.StudyRoomAnnotation,
+      sessions: room.StudySession,
+      _count: room._count,
+    };
+
+    return NextResponse.json(response);
   } catch (error) {
     console.error("Error fetching room:", error);
     return NextResponse.json(

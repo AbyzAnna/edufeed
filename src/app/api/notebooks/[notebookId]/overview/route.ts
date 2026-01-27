@@ -137,15 +137,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           })
           .join("\n\n");
 
-        const response = await fetch(`${workersUrl}/api/summarize`, {
+        const response = await fetch(`${workersUrl}/api/generate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            content: contextText,
-            type: "overview",
-            format: "json",
-            instructions: `Generate a brief overview (2-3 sentences) of what this notebook contains.
-Also extract 3-5 key topics and suggest 3-4 relevant questions.
+            context: contextText,
+            outputType: "QUICK_OVERVIEW",
+            prompt: `Generate a comprehensive overview (3-4 paragraphs, about 150-200 words) of what this notebook contains.
+Cover the main topics, key concepts, and what the reader will learn.
+Also extract 5-8 key topics and suggest 4-6 relevant questions users might want to ask.
 Return as JSON: { summary: string, keyTopics: string[], suggestedQuestions: string[] }`,
           }),
         });
@@ -258,13 +258,27 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           return `[${s.type}: ${s.title}]\n${content.slice(0, 3000)}`;
         }).join("\n\n");
 
-        const response = await fetch(`${workersUrl}/api/summarize`, {
+        const response = await fetch(`${workersUrl}/api/generate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            content: contextText,
-            type: "comprehensive",
-            format: "json",
+            context: contextText,
+            outputType: "SUMMARY",
+            prompt: `Create an extremely detailed and thorough summary of the following sources.
+
+IMPORTANT LENGTH REQUIREMENTS:
+- The summary MUST be at least 400-600 words (4-6 substantial paragraphs)
+- Include 8-12 key points covering ALL major topics from the sources
+- Extract 4-8 main themes
+
+STRUCTURE:
+1. Opening paragraph: Provide context about what the content covers and why it matters
+2. Body paragraphs: Explain each major topic in detail, including core concepts, definitions, relationships between ideas, and specific examples
+3. Concluding paragraph: Synthesize the key takeaways
+
+For keyPoints: Make each point substantive (1-2 sentences), not just single phrases.
+
+Format as JSON with fields: summary (string - 400-600 words minimum), keyPoints (array of 8-12 detailed strings), themes (array of 4-8 strings).`,
           }),
         });
 

@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 import path from 'path';
 
 const authFile = path.join(__dirname, 'tests/.auth/user.json');
+const authFileUser2 = path.join(__dirname, 'tests/.auth/user2.json');
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -16,12 +17,17 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
-    // Setup project - runs auth setup first
+    // Setup project - runs auth setup for user 1
     {
       name: 'setup',
       testMatch: /auth\.setup\.ts/,
     },
-    // Main tests depend on setup
+    // Setup project - runs auth setup for user 2
+    {
+      name: 'setup-user2',
+      testMatch: /auth-user2\.setup\.ts/,
+    },
+    // Main tests depend on setup (user 1)
     {
       name: 'chromium',
       use: {
@@ -29,6 +35,16 @@ export default defineConfig({
         storageState: authFile,
       },
       dependencies: ['setup'],
+    },
+    // Multi-user tests project - uses user 2 auth
+    {
+      name: 'chromium-user2',
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: authFileUser2,
+      },
+      dependencies: ['setup-user2'],
+      testMatch: /study-room-multiuser\.spec\.ts/,
     },
   ],
   webServer: {

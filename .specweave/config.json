@@ -101,5 +101,13 @@
       "incrementSpecs": false
     },
     "keepEnglishOriginals": false
+  },
+  "auto": {
+    "enabled": true,
+    "maxRetries": 20,
+    "requireTests": false,
+    "requireValidation": true,
+    "requireJudgeLLM": false,
+    "skipQualityGates": false
   }
 }

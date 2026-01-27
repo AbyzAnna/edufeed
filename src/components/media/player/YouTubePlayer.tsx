@@ -107,12 +107,15 @@ export default function YouTubePlayer({
 
     playerRef.current = new window.YT.Player(`youtube-player-${videoId}`, {
       videoId,
+      host: "https://www.youtube-nocookie.com", // Privacy-enhanced mode
       playerVars: {
         autoplay: 0,
         controls: 0,
         modestbranding: 1,
         rel: 0,
         start: startTime,
+        enablejsapi: 1,
+        origin: window.location.origin,
       },
       events: {
         onReady: () => {

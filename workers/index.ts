@@ -476,22 +476,28 @@ const YOUTUBE_INNERTUBE_CONFIG = {
     clientName: 'WEB',
     clientVersion: '2.20240101.00.00',
   },
-  // Note: This is the public YouTube innertube API key used by the official YouTube web client
-  // It's designed to be public but should be moved to env for easy rotation if needed
-  apiKey: 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
 };
+
+// Default public YouTube innertube API key (used by official YouTube web client)
+// This is a well-known public key, but we allow overriding via env for flexibility
+const DEFAULT_YOUTUBE_API_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
+
+function getYouTubeApiKey(env?: Env): string {
+  return env?.YOUTUBE_INNERTUBE_API_KEY || DEFAULT_YOUTUBE_API_KEY;
+}
 
 /**
  * Extract transcript using YouTube's innertube API
  * This uses the same approach as the youtube-transcript npm package
  */
-async function extractYouTubeTranscript(videoId: string): Promise<{
+async function extractYouTubeTranscript(videoId: string, env?: Env): Promise<{
   transcript: string;
   title: string;
   channelName: string;
   duration?: number;
   hasTranscript: boolean;
 }> {
+  const apiKey = getYouTubeApiKey(env);
   let title = 'Unknown Title';
   let channelName = 'Unknown';
   let duration: number | undefined;
@@ -646,7 +652,7 @@ async function extractYouTubeTranscript(videoId: string): Promise<{
 
         // Use innertube player API to get caption info
         const innertubeResponse = await fetch(
-          'https://www.youtube.com/youtubei/v1/player?key=' + YOUTUBE_INNERTUBE_CONFIG.apiKey + '&prettyPrint=false',
+          'https://www.youtube.com/youtubei/v1/player?key=' + apiKey + '&prettyPrint=false',
           {
             method: 'POST',
             headers: {
@@ -782,7 +788,7 @@ async function handleYouTubeTranscript(
     }
 
     // Extract transcript using innertube API
-    const result = await extractYouTubeTranscript(videoId);
+    const result = await extractYouTubeTranscript(videoId, env);
     let { transcript, title, channelName, duration, hasTranscript } = result;
 
     // If no transcript found, use AI to generate a summary

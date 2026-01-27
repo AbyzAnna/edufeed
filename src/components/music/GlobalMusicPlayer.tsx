@@ -48,14 +48,27 @@ export default function GlobalMusicPlayer() {
   const [mounted, setMounted] = useState(false);
   const [playerError, setPlayerError] = useState(false);
   const [showMiniPlayer, setShowMiniPlayer] = useState(true);
-  const [isHydrated, setIsHydrated] = useState(false);
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
   const lastVideoIdRef = useRef<string | null>(null);
+  // Track the isPlaying state at time of player creation for autoplay
+  const shouldAutoplayRef = useRef(false);
+  // Track if we've detected the actual player state after ready
+  const hasCheckedAutoplayRef = useRef(false);
+  // Refs to avoid stale closures in YouTube player callbacks
+  const isPlayingRef = useRef(isPlaying);
+  const togglePlayRef = useRef(togglePlay);
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  useEffect(() => {
+    togglePlayRef.current = togglePlay;
+  }, [togglePlay]);
 
   useEffect(() => {
     setMounted(true);
-    // Give Zustand time to hydrate from localStorage
-    const timer = setTimeout(() => setIsHydrated(true), 100);
-    return () => clearTimeout(timer);
   }, []);
 
   // Load YouTube IFrame API
@@ -105,7 +118,7 @@ export default function GlobalMusicPlayer() {
 
   // Initialize/update player when video changes
   useEffect(() => {
-    if (!isApiReady || !currentVideo || !mounted || !isHydrated || !playerContainerRef.current)
+    if (!isApiReady || !currentVideo || !mounted || !playerContainerRef.current)
       return;
 
     // If same video, just ensure it's playing
@@ -114,7 +127,11 @@ export default function GlobalMusicPlayer() {
     }
 
     setPlayerError(false);
+    setAutoplayBlocked(false);
+    hasCheckedAutoplayRef.current = false;
     lastVideoIdRef.current = currentVideo.videoId;
+    // Capture current play state for autoplay decision
+    shouldAutoplayRef.current = isPlaying;
 
     // Destroy existing player to start fresh
     destroyPlayer();
@@ -130,18 +147,18 @@ export default function GlobalMusicPlayer() {
         videoId: currentVideo.videoId,
         width: "100%",
         height: "100%",
+        host: "https://www.youtube-nocookie.com", // Privacy-enhanced mode for better embed compatibility
         playerVars: {
-          autoplay: isPlaying ? 1 : 0,
+          autoplay: 1, // Always autoplay - the user clicked to play
           controls: 1,
           modestbranding: 1,
           rel: 0,
-          fs: 0, // Disable fullscreen button (we handle it)
+          fs: 0,
           playsinline: 1,
           enablejsapi: 1,
           origin: window.location.origin,
-          // These help with embedding restrictions
-          iv_load_policy: 3, // Hide annotations
-          cc_load_policy: 0, // Hide captions by default
+          iv_load_policy: 3,
+          cc_load_policy: 0,
         },
         events: {
           onReady: (event) => {
@@ -152,41 +169,81 @@ export default function GlobalMusicPlayer() {
             if (isMuted) {
               event.target.mute();
             }
-            // Small delay before playing to ensure iframe is fully loaded
-            // Only auto-play if the store state says we should be playing
+            // Always try to play when ready since user clicked to play
+            try {
+              event.target.playVideo();
+            } catch (e) {
+              console.error("Error playing video:", e);
+            }
+
+            // Check if autoplay was blocked after a short delay
             setTimeout(() => {
-              try {
-                if (isPlaying) {
-                  event.target.playVideo();
+              if (playerRef.current && !hasCheckedAutoplayRef.current) {
+                try {
+                  const currentState = playerRef.current.getPlayerState();
+                  // If not playing or buffering, autoplay was likely blocked
+                  if (currentState !== window.YT.PlayerState.PLAYING && currentState !== 3) {
+                    console.log("Autoplay check: player state is", currentState, "- autoplay may be blocked");
+                    setAutoplayBlocked(true);
+                    hasCheckedAutoplayRef.current = true;
+                  }
+                } catch (e) {
+                  // Ignore errors
                 }
-              } catch (e) {
-                console.error("Error playing video:", e);
               }
-            }, 100);
+            }, 1000);
           },
           onStateChange: (event) => {
-            if (event.data === window.YT.PlayerState.ENDED) {
+            // YouTube Player States: -1 (unstarted), 0 (ended), 1 (playing), 2 (paused), 3 (buffering), 5 (cued)
+            const state = event.data;
+
+            if (state === window.YT.PlayerState.ENDED) {
               playNext();
             }
-            if (event.data === window.YT.PlayerState.PLAYING) {
+
+            if (state === window.YT.PlayerState.PLAYING) {
               setPlayerError(false);
+              setAutoplayBlocked(false);
+              hasCheckedAutoplayRef.current = true;
+              // Sync store state - player is actually playing
+              if (!isPlayingRef.current) {
+                togglePlayRef.current();
+              }
               try {
                 setDuration(event.target.getDuration());
-              } catch (e) {}
+              } catch (e) {
+                // Ignore duration fetch errors
+              }
             }
-            // Handle unplayable video
-            if (event.data === window.YT.PlayerState.UNSTARTED) {
-              // Give it some time to start
+
+            // Handle paused state - sync with store
+            if (state === window.YT.PlayerState.PAUSED) {
+              // Only sync if we've already checked autoplay (not initial load)
+              if (hasCheckedAutoplayRef.current && isPlayingRef.current) {
+                // User paused via YouTube controls
+                togglePlayRef.current();
+              }
+            }
+
+            // Detect autoplay blocked: player loaded but not playing
+            // State -1 (unstarted) or 5 (cued) after onReady means autoplay failed
+            if ((state === -1 || state === 5 || state === window.YT.PlayerState.PAUSED) && !hasCheckedAutoplayRef.current) {
+              // Wait a moment to see if it starts playing
               setTimeout(() => {
-                if (playerRef.current) {
+                if (playerRef.current && !hasCheckedAutoplayRef.current) {
                   try {
-                    const state = playerRef.current.getPlayerState();
-                    if (state === window.YT.PlayerState.UNSTARTED) {
-                      console.log("Video stuck in unstarted state");
+                    const currentState = playerRef.current.getPlayerState();
+                    if (currentState !== window.YT.PlayerState.PLAYING && currentState !== 3) {
+                      // Player didn't start - autoplay was blocked
+                      console.log("Autoplay blocked by browser, player state:", currentState);
+                      setAutoplayBlocked(true);
+                      hasCheckedAutoplayRef.current = true;
                     }
-                  } catch (e) {}
+                  } catch (e) {
+                    // Ignore errors
+                  }
                 }
-              }, 3000);
+              }, 500);
             }
           },
           onError: (event) => {
@@ -203,7 +260,7 @@ export default function GlobalMusicPlayer() {
       console.error("Error creating YouTube player:", e);
       setPlayerError(true);
     }
-  }, [isApiReady, currentVideo?.videoId, mounted, isHydrated, destroyPlayer]);
+  }, [isApiReady, currentVideo?.videoId, mounted, destroyPlayer, playNext]);
 
   // Sync play/pause state
   useEffect(() => {
@@ -251,7 +308,9 @@ export default function GlobalMusicPlayer() {
         if (playerRef.current) {
           setCurrentTime(playerRef.current.getCurrentTime());
         }
-      } catch (e) {}
+      } catch (e) {
+        // Ignore time fetch errors
+      }
     }, 1000);
     return () => clearInterval(interval);
   }, [isPlaying, isPlayerReady]);
@@ -278,53 +337,92 @@ export default function GlobalMusicPlayer() {
     }
   };
 
+  // Handle click to play when autoplay was blocked
+  const handleClickToPlay = useCallback(() => {
+    if (playerRef.current && autoplayBlocked) {
+      try {
+        playerRef.current.playVideo();
+        setAutoplayBlocked(false);
+        hasCheckedAutoplayRef.current = true;
+      } catch (e) {
+        console.error("Error playing video:", e);
+      }
+    }
+  }, [autoplayBlocked]);
+
   const showPlayer = currentVideo && (isMinimized || isExpanded);
 
   if (!mounted) return null;
 
+  // Determine player container position
+  // Key fix: Always keep the player in a valid visible position when there's a video
+  // Only hide completely when there's no video
+  const getPlayerContainerStyle = (): React.CSSProperties => {
+    if (!currentVideo) {
+      // No video - hide completely
+      return {
+        position: "fixed",
+        bottom: "-500px",
+        right: "16px",
+        width: "320px",
+        height: "180px",
+        zIndex: -1,
+        opacity: 0,
+        pointerEvents: "none",
+      };
+    }
+
+    if (isExpanded) {
+      // Expanded full screen
+      return {
+        position: "fixed",
+        top: "60px",
+        left: "16px",
+        right: "16px",
+        bottom: "140px",
+        zIndex: 101,
+        borderRadius: "12px",
+        overflow: "hidden",
+      };
+    }
+
+    if (isMinimized && showMiniPlayer) {
+      // Mini player visible
+      return {
+        position: "fixed",
+        bottom: "120px",
+        right: "16px",
+        width: "320px",
+        height: "180px",
+        zIndex: 70,
+        borderRadius: "12px",
+        overflow: "hidden",
+        boxShadow: "0 10px 40px rgba(0,0,0,0.5)",
+        border: "1px solid rgba(255,255,255,0.1)",
+      };
+    }
+
+    // Video exists but player should be hidden (mini player toggle off)
+    // Keep it positioned properly but visually hidden so YouTube still works
+    return {
+      position: "fixed",
+      bottom: "120px",
+      right: "16px",
+      width: "320px",
+      height: "180px",
+      zIndex: -1,
+      opacity: 0,
+      pointerEvents: "none",
+    };
+  };
+
   return (
     <>
-      {/* Hidden player container - always rendered with fixed size for YouTube to work */}
+      {/* Player container - always rendered when there's a video */}
       <div
         ref={playerContainerRef}
         className="bg-black"
-        style={{
-          position: "fixed",
-          // Keep player visible but hidden when not showing
-          // YouTube requires visible iframe to work properly
-          ...(showPlayer && isExpanded
-            ? {
-                top: "60px",
-                left: "16px",
-                right: "16px",
-                bottom: "140px",
-                zIndex: 101,
-                borderRadius: "12px",
-                overflow: "hidden",
-              }
-            : showPlayer && isMinimized && showMiniPlayer
-              ? {
-                  bottom: "120px",
-                  right: "16px",
-                  width: "320px",
-                  height: "180px",
-                  zIndex: 70,
-                  borderRadius: "12px",
-                  overflow: "hidden",
-                  boxShadow: "0 10px 40px rgba(0,0,0,0.5)",
-                  border: "1px solid rgba(255,255,255,0.1)",
-                }
-              : {
-                  // Hidden but still valid - position off screen but keep dimensions
-                  bottom: "-500px",
-                  right: "16px",
-                  width: "320px",
-                  height: "180px",
-                  zIndex: -1,
-                  opacity: 0,
-                  pointerEvents: "none" as const,
-                }),
-        }}
+        style={getPlayerContainerStyle()}
       />
 
       {/* Expanded Full Screen Player - Backdrop and Controls */}
@@ -518,6 +616,11 @@ export default function GlobalMusicPlayer() {
                 <p className="text-xs text-gray-400 truncate">
                   {currentVideo.channelName}
                 </p>
+                {autoplayBlocked && (
+                  <p className="text-xs text-purple-400 mt-0.5 animate-pulse">
+                    ▶ Click play to start
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center gap-2">
@@ -564,10 +667,15 @@ export default function GlobalMusicPlayer() {
                 </button>
 
                 <button
-                  onClick={togglePlay}
-                  className="w-10 h-10 rounded-full bg-white flex items-center justify-center hover:scale-105 transition-transform"
+                  onClick={autoplayBlocked ? handleClickToPlay : togglePlay}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center hover:scale-105 transition-transform ${
+                    autoplayBlocked ? "bg-purple-500 animate-pulse" : "bg-white"
+                  }`}
+                  title={autoplayBlocked ? "Click to start playback" : undefined}
                 >
-                  {isPlaying ? (
+                  {autoplayBlocked ? (
+                    <Play className="w-5 h-5 text-white ml-0.5" />
+                  ) : isPlaying ? (
                     <Pause className="w-5 h-5 text-gray-900" />
                   ) : (
                     <Play className="w-5 h-5 text-gray-900 ml-0.5" />

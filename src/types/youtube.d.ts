@@ -29,6 +29,7 @@ declare global {
           videoId: string;
           width?: string | number;
           height?: string | number;
+          host?: string; // For youtube-nocookie.com privacy-enhanced mode
           playerVars?: Record<string, number | string>;
           events?: {
             onReady?: (event: { target: YTPlayer }) => void;
