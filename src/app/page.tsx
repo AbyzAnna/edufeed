@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { GraduationCap, BookOpen, Users, Brain, ArrowRight, Sparkles, LogOut } from "lucide-react";
+import { GraduationCap, BookOpen, Users, Brain, ArrowRight, Sparkles, LogOut, Loader2 } from "lucide-react";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/SessionProvider";
 
 export default function Home() {
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { user, isLoading, signOut } = useAuth();
 
   useEffect(() => {
     // Check if there's an auth error or token in the URL hash
@@ -30,7 +30,11 @@ export default function Home() {
             <span className="text-xl font-bold">EduFeed</span>
           </div>
           <div className="flex items-center gap-4">
-            {user ? (
+            {isLoading ? (
+              <div className="flex items-center gap-2 text-gray-400">
+                <Loader2 className="w-4 h-4 animate-spin" />
+              </div>
+            ) : user ? (
               <>
                 <Link
                   href="/notebooks"

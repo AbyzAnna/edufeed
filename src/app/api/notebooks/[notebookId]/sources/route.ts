@@ -375,6 +375,9 @@ async function processSourceAndGenerateFeed(
   textContent?: string,
   fileUrl?: string
 ): Promise<void> {
+  const startTime = Date.now();
+  console.log(`[Background Processing] Starting for source ${notebookSourceId}`);
+
   try {
     // Step 1: Process the source (extract content from URL, PDF, YouTube, etc.)
     const result = await processSource(
@@ -384,8 +387,11 @@ async function processSourceAndGenerateFeed(
       textContent
     );
 
+    const extractionTime = Date.now() - startTime;
+    console.log(`[Background Processing] Content extraction completed in ${extractionTime}ms`);
+
     if (result.error || !result.content) {
-      console.error(`Source processing failed for ${notebookSourceId}:`, result.error);
+      console.error(`[Background Processing] Source processing failed for ${notebookSourceId}:`, result.error);
       return;
     }
 
@@ -416,23 +422,40 @@ async function processSourceAndGenerateFeed(
       },
     });
 
-    console.log(`✅ Created Source ${source.id} from NotebookSource ${notebookSourceId}`);
+    console.log(`[Background Processing] ✅ Created Source ${source.id} from NotebookSource ${notebookSourceId}`);
 
-    // Step 4: Generate feed content (flashcards, summary, table)
-    const feedResult = await generateFeedContent(userId, source.id, {
-      contentTypes: ["SUMMARY", "FLASHCARD_DECK"],
-      flashcardCount: 10,
-      summaryLength: "medium",
-      summaryStyle: "professional",
-    });
+    // Step 4: Generate feed content (flashcards, summary, table) - run in truly non-blocking way
+    // Don't await this - let it run in the background
+    generateFeedContentBackground(userId, source.id, notebookSourceId);
 
-    if (feedResult.success) {
-      console.log(`✅ Generated ${feedResult.feedItemIds.length} feed items for source ${source.id}`);
-    } else {
-      console.error(`Feed generation had errors for source ${source.id}:`, feedResult.errors);
-    }
   } catch (error) {
-    console.error(`Error in processSourceAndGenerateFeed for ${notebookSourceId}:`, error);
+    console.error(`[Background Processing] Error for ${notebookSourceId}:`, error);
     // Don't rethrow - this is background processing
   }
+}
+
+/**
+ * Generate feed content in the background without blocking
+ */
+function generateFeedContentBackground(userId: string, sourceId: string, notebookSourceId: string): void {
+  // Use setImmediate/setTimeout to make this truly non-blocking
+  setImmediate(async () => {
+    try {
+      console.log(`[Feed Generation] Starting for source ${sourceId}`);
+      const feedResult = await generateFeedContent(userId, sourceId, {
+        contentTypes: ["SUMMARY", "FLASHCARD_DECK"],
+        flashcardCount: 10,
+        summaryLength: "medium",
+        summaryStyle: "professional",
+      });
+
+      if (feedResult.success) {
+        console.log(`[Feed Generation] ✅ Generated ${feedResult.feedItemIds.length} feed items for source ${sourceId}`);
+      } else {
+        console.error(`[Feed Generation] Errors for source ${sourceId}:`, feedResult.errors);
+      }
+    } catch (error) {
+      console.error(`[Feed Generation] Error for source ${sourceId}:`, error);
+    }
+  });
 }

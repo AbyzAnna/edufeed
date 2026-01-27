@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useAuth } from "@/components/providers/SessionProvider";
-import { GraduationCap, LogOut, BookOpen, Users, MessageCircle, Layers } from "lucide-react";
+import { GraduationCap, LogOut, BookOpen, Users, MessageCircle, Layers, Loader2 } from "lucide-react";
 import NotificationBell from "@/components/social/NotificationBell";
 
 export default function Navbar() {
-  const { user, signOut } = useAuth();
+  const { user, isLoading, signOut } = useAuth();
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-black/90 backdrop-blur-lg border-b border-white/10 hidden md:block">
@@ -32,7 +32,12 @@ export default function Navbar() {
         </nav>
 
         <div className="flex items-center gap-4">
-          {user ? (
+          {isLoading ? (
+            // Show loading state while checking auth
+            <div className="flex items-center gap-2 text-gray-400">
+              <Loader2 className="w-4 h-4 animate-spin" />
+            </div>
+          ) : user ? (
             <div className="flex items-center gap-3">
               <Link
                 href="/messages"

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import Button from "@/components/ui/Button";
 import { createClient } from "@/lib/supabase/client";
+import { ensureSession, apiPost } from "@/lib/api/fetch";
 
 interface AddSourceModalProps {
   isOpen: boolean;
@@ -64,10 +65,10 @@ export default function AddSourceModal({
       if ((selectedType === "PDF" || selectedType === "IMAGE" || selectedType === "AUDIO") && file) {
         const supabase = createClient();
 
-        // Get current user for path prefix
-        const { data: { user } } = await supabase.auth.getUser();
+        // Ensure session is valid and refreshed before upload
+        const user = await ensureSession();
         if (!user) {
-          throw new Error("Please sign in to upload files");
+          throw new Error("Please sign in to upload files. Try refreshing the page.");
         }
 
         // Validate file size (50MB max)
@@ -133,25 +134,25 @@ export default function AddSourceModal({
       const urlTypes = ["URL", "YOUTUBE", "GOOGLE_DOC"];
       const fileTypes = ["PDF", "IMAGE", "AUDIO"];
 
-      // Add source to notebook
-      const response = await fetch(`/api/notebooks/${notebookId}/sources`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      // Add source to notebook using resilient API fetch with automatic 401 retry
+      const { data: source, error: apiError, status } = await apiPost(
+        `/api/notebooks/${notebookId}/sources`,
+        {
           type: selectedType,
           title: title.trim() || getDefaultTitle(),
           url: urlTypes.includes(selectedType) ? url : null,
           fileUrl: fileTypes.includes(selectedType) ? fileUrl : null,
           content: selectedType === "TEXT" ? content : null,
-        }),
-      });
+        }
+      );
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to add source");
+      if (apiError || !source) {
+        // Handle specific error cases
+        if (status === 401) {
+          throw new Error("Session expired. Please refresh the page and try again.");
+        }
+        throw new Error(apiError || "Failed to add source");
       }
-
-      const source = await response.json();
       onSourceAdded(source);
       handleClose();
     } catch (err) {

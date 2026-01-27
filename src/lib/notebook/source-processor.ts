@@ -15,6 +15,9 @@ export async function processSource(
   url?: string,
   rawContent?: string
 ): Promise<ProcessResult> {
+  const startTime = Date.now();
+  console.log(`[Source Processor] Starting ${type} processing for source ${sourceId}`);
+
   try {
     // Update status to processing
     await prisma.notebookSource.update({
@@ -50,7 +53,10 @@ export async function processSource(
         throw new Error(`Unsupported source type: ${type}`);
     }
 
-    // Update source with processed content
+    const processingTime = Date.now() - startTime;
+    console.log(`[Source Processor] Content extraction completed in ${processingTime}ms`);
+
+    // Update source with processed content - mark as COMPLETED immediately
     await prisma.notebookSource.update({
       where: { id: sourceId },
       data: {
@@ -62,15 +68,20 @@ export async function processSource(
       },
     });
 
-    // Create embeddings if successful
-    if (!result.error && result.content) {
-      await createEmbeddings(sourceId, result.content);
+    // Create embeddings in the background (non-blocking) - don't wait for this
+    if (!result.error && result.content && result.content.length >= 50) {
+      createEmbeddings(sourceId, result.content).catch((embError) => {
+        console.error(`[Source Processor] Embedding creation failed (non-critical):`, embError);
+      });
     }
 
+    const totalTime = Date.now() - startTime;
+    console.log(`[Source Processor] Source ${sourceId} processed successfully in ${totalTime}ms`);
     return result;
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
+    console.error(`[Source Processor] Failed for source ${sourceId}: ${errorMessage}`);
 
     await prisma.notebookSource.update({
       where: { id: sourceId },
@@ -136,17 +147,52 @@ async function processUrl(url: string): Promise<ProcessResult> {
   }
 }
 
-// Process PDF
+// Process PDF with timeout and better error handling
 async function processPdf(fileUrl: string): Promise<ProcessResult> {
+  const TIMEOUT_MS = 60000; // 60 second timeout for PDF processing
+
   try {
-    // Use pdf-parse v2 API
+    console.log(`[PDF Processor] Starting processing for: ${fileUrl.substring(0, 100)}...`);
+
+    // First, fetch the PDF as a buffer (more reliable than letting pdf-parse fetch)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+    let pdfBuffer: ArrayBuffer;
+    try {
+      console.log('[PDF Processor] Fetching PDF file...');
+      const response = await fetch(fileUrl, {
+        signal: controller.signal,
+        headers: {
+          'Accept': 'application/pdf',
+        },
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch PDF: ${response.status} ${response.statusText}`);
+      }
+
+      pdfBuffer = await response.arrayBuffer();
+      console.log(`[PDF Processor] PDF fetched, size: ${(pdfBuffer.byteLength / 1024).toFixed(2)} KB`);
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+        throw new Error('PDF download timed out. The file may be too large.');
+      }
+      throw fetchError;
+    }
+
+    // Use pdf-parse v2 API with buffer
     const { PDFParse } = await import("pdf-parse");
 
-    const parser = new PDFParse({ url: fileUrl });
+    console.log('[PDF Processor] Parsing PDF content...');
+    const parser = new PDFParse(Buffer.from(pdfBuffer));
     const result = await parser.getText();
 
     const content = result.text.replace(/\s+/g, " ").trim();
     const wordCount = content.split(/\s+/).length;
+    console.log(`[PDF Processor] Extracted ${wordCount} words`);
 
     // Get document info
     let info = {};
@@ -157,8 +203,23 @@ async function processPdf(fileUrl: string): Promise<ProcessResult> {
       numPages = infoResult.total || 0;
     } catch {
       // Info extraction failed, continue with text only
+      console.log('[PDF Processor] Could not extract PDF metadata');
     }
 
+    if (!content || wordCount < 10) {
+      console.log('[PDF Processor] Warning: Very little text extracted from PDF');
+      return {
+        content: content || `[PDF Document] - Could not extract text. The PDF may be scanned or image-based. Try uploading as an image for OCR.`,
+        wordCount: wordCount || 20,
+        metadata: {
+          pages: numPages,
+          info,
+          warning: 'Low text content extracted',
+        },
+      };
+    }
+
+    console.log(`[PDF Processor] Success! ${numPages} pages, ${wordCount} words`);
     return {
       content,
       wordCount,
@@ -168,10 +229,12 @@ async function processPdf(fileUrl: string): Promise<ProcessResult> {
       },
     };
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Failed to process PDF";
+    console.error(`[PDF Processor] Error: ${errorMessage}`);
     return {
       content: "",
       wordCount: 0,
-      error: error instanceof Error ? error.message : "Failed to process PDF",
+      error: errorMessage,
     };
   }
 }

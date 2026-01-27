@@ -18,12 +18,47 @@ export interface AuthSession {
 
 /**
  * Get the current authenticated user from Supabase
+ * Includes session refresh for API routes
  */
 export async function getUser() {
   const supabase = await createClient()
+
+  // First, try to get the current session and refresh if needed
+  // This handles expired access tokens by using the refresh token
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+
+  if (sessionError) {
+    console.log('[Auth] Session error:', sessionError.message)
+    return null
+  }
+
+  // If session exists but might be expiring soon, refresh it
+  if (session?.expires_at) {
+    const expiresAt = session.expires_at * 1000 // Convert to milliseconds
+    const now = Date.now()
+    const fiveMinutes = 5 * 60 * 1000
+
+    // If token expires within 5 minutes, proactively refresh
+    if (expiresAt - now < fiveMinutes) {
+      console.log('[Auth] Session expiring soon, refreshing...')
+      const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession()
+
+      if (refreshError) {
+        console.log('[Auth] Refresh failed:', refreshError.message)
+        // Continue with current session if refresh fails
+      } else if (refreshedSession) {
+        console.log('[Auth] Session refreshed successfully')
+      }
+    }
+  }
+
+  // Now get the user (uses refreshed session if available)
   const { data: { user }, error } = await supabase.auth.getUser()
 
   if (error || !user) {
+    if (error) {
+      console.log('[Auth] getUser error:', error.message)
+    }
     return null
   }
 
