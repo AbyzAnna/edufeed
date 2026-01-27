@@ -97,10 +97,24 @@ export async function initFFmpeg(
 
     // Track encoding progress
     ffmpeg.on("progress", ({ progress }) => {
-      const percent = Math.round(progress * 100);
+      // CRITICAL: Validate and clamp FFmpeg progress value
+      // FFmpeg can return values > 1.0, NaN, or negative numbers during encoding
+      let safeProgress = progress;
+
+      // Handle NaN, Infinity, or undefined
+      if (!Number.isFinite(safeProgress)) {
+        safeProgress = 0;
+      }
+
+      // Clamp to valid range [0, 1]
+      safeProgress = Math.max(0, Math.min(1, safeProgress));
+
+      const percent = Math.round(safeProgress * 100);
+      const scaledProgress = Math.min(90, Math.max(30, 30 + percent * 0.6)); // Scale to 30-90%, clamped
+
       onProgress?.({
         stage: "encoding",
-        progress: Math.min(90, 30 + percent * 0.6), // Scale to 30-90%
+        progress: scaledProgress,
         message: `Encoding video... ${percent}%`,
       });
     });

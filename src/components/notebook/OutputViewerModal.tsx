@@ -712,6 +712,12 @@ function VideoOverviewViewer({ output }: { output: Output }) {
 
   // If video generation is in progress, show progress
   if (isGeneratingVideo || videoProgress?.stage === "loading" || videoProgress?.stage === "preparing" || videoProgress?.stage === "processing" || videoProgress?.stage === "encoding") {
+    // CRITICAL: Validate and clamp progress value to prevent display issues
+    // This handles cases where FFmpeg might report invalid progress values
+    const rawProgress = videoProgress?.progress ?? 0;
+    const safeProgress = Number.isFinite(rawProgress) ? Math.max(0, Math.min(100, Math.round(rawProgress))) : 0;
+    const progressRatio = safeProgress / 100;
+
     return (
       <div className="flex flex-col items-center justify-center h-full p-8">
         <div className="w-full max-w-md">
@@ -735,13 +741,13 @@ function VideoOverviewViewer({ output }: { output: Output }) {
                 strokeWidth="8"
                 fill="none"
                 strokeDasharray={2 * Math.PI * 56}
-                strokeDashoffset={2 * Math.PI * 56 * (1 - (videoProgress?.progress || 0) / 100)}
+                strokeDashoffset={2 * Math.PI * 56 * (1 - progressRatio)}
                 className="text-pink-500 transition-all duration-300"
                 strokeLinecap="round"
               />
             </svg>
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-2xl font-bold text-white">{videoProgress?.progress || 0}%</span>
+              <span className="text-2xl font-bold text-white">{safeProgress}%</span>
             </div>
           </div>
 
