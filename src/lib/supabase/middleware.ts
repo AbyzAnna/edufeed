@@ -1,6 +1,20 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+// Cookie options for production - ensures cookies persist across refreshes
+function getCookieOptions(request: NextRequest) {
+  const isProduction = process.env.NODE_ENV === 'production'
+  const isSecure = request.url.startsWith('https://') || isProduction
+
+  return {
+    path: '/',
+    sameSite: 'lax' as const,
+    secure: isSecure,
+    // Don't set domain - let browser handle it based on the request
+    httpOnly: true,
+  }
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -19,6 +33,8 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse
   }
 
+  const cookieOptions = getCookieOptions(request)
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -35,7 +51,10 @@ export async function updateSession(request: NextRequest) {
             request,
           })
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
+            supabaseResponse.cookies.set(name, value, {
+              ...cookieOptions,
+              ...options,
+            })
           )
         },
       },
