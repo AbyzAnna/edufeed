@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+.next/
+out/
+dist/
+
+# Test files and directories
+tests/
+test-results/
+playwright-report/
+coverage/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+
+# Development files
+.specweave/
+.git/
+.github/
+
+# Mobile app (separate deployment)
+edufeed-mobile/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs and temp files
+*.log
+npm-debug.log*
+.DS_Store
+
+# Scripts not needed in production
+scripts/
+
+# Documentation
+*.md
+!README.md
+
+# Environment files (Vercel manages these)
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
