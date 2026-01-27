@@ -3,8 +3,8 @@
 import { createClient } from "@/lib/supabase/client";
 import { GraduationCap } from "lucide-react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { useState, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { useState, Suspense, useRef } from "react";
 
 function LoginForm() {
   const [email, setEmail] = useState("");
@@ -12,9 +12,11 @@ function LoginForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const searchParams = useSearchParams();
+  const router = useRouter();
   const redirectTo = searchParams.get("redirectTo") || "/notebooks";
 
-  const supabase = createClient();
+  const supabaseRef = useRef(createClient());
+  const supabase = supabaseRef.current;
 
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
@@ -38,7 +40,7 @@ function LoginForm() {
     setIsLoading(true);
     setError(null);
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -46,8 +48,14 @@ function LoginForm() {
     if (error) {
       setError(error.message);
       setIsLoading(false);
-    } else {
-      window.location.href = redirectTo;
+    } else if (data.session) {
+      // Session is established, cookies should be set
+      // Use router.refresh() to ensure middleware runs and sets cookies properly
+      router.refresh();
+      // Small delay to ensure cookies are propagated, then redirect
+      setTimeout(() => {
+        router.push(redirectTo);
+      }, 100);
     }
   };
 

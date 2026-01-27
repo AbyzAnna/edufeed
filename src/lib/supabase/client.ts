@@ -23,6 +23,8 @@ export function createClient() {
         secure: process.env.NODE_ENV === 'production',
         // Root path for all routes
         path: '/',
+        // Set maxAge to 1 year (in seconds) - ensures cookies persist across browser sessions
+        maxAge: 60 * 60 * 24 * 365,
       },
     }
   )

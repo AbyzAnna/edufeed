@@ -1,6 +1,17 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
+// Default cookie options for server-side auth
+const isProduction = process.env.NODE_ENV === 'production'
+const defaultCookieOptions = {
+  path: '/',
+  sameSite: 'lax' as const,
+  secure: isProduction,
+  httpOnly: true,
+  // Set maxAge to 1 year (in seconds) - ensures cookies persist across browser sessions
+  maxAge: 60 * 60 * 24 * 365,
+}
+
 export async function createClient() {
   const cookieStore = await cookies()
 
@@ -15,7 +26,10 @@ export async function createClient() {
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
+              cookieStore.set(name, value, {
+                ...defaultCookieOptions,
+                ...options,
+              })
             )
           } catch {
             // The `setAll` method was called from a Server Component.

@@ -3,7 +3,8 @@
 import { createClient } from "@/lib/supabase/client";
 import { GraduationCap, Mail } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useState, useRef } from "react";
 
 export default function SignupPage() {
   const [email, setEmail] = useState("");
@@ -14,8 +15,10 @@ export default function SignupPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [needsEmailConfirmation, setNeedsEmailConfirmation] = useState(false);
+  const router = useRouter();
 
-  const supabase = createClient();
+  const supabaseRef = useRef(createClient());
+  const supabase = supabaseRef.current;
 
   const handleGoogleSignUp = async () => {
     setIsLoading(true);
@@ -71,8 +74,11 @@ export default function SignupPage() {
         setNeedsEmailConfirmation(true);
         setSuccess(true);
       } else {
-        // Redirect to notebooks (shouldn't happen with current setup)
-        window.location.href = "/notebooks";
+        // Redirect to notebooks using router for proper client-side navigation
+        router.refresh();
+        setTimeout(() => {
+          router.push("/notebooks");
+        }, 100);
       }
     } catch (err) {
       setError("An error occurred. Please try again.");

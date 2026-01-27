@@ -16,6 +16,7 @@ import {
   Pencil,
   ChevronDown,
   ChevronUp,
+  Flag,
 } from "lucide-react";
 import Link from "next/link";
 import NotebookChat from "@/components/notebook/NotebookChat";
@@ -23,6 +24,8 @@ import AddSourceModal from "@/components/notebook/AddSourceModal";
 import EditSourceModal from "@/components/notebook/EditSourceModal";
 import Button from "@/components/ui/Button";
 import Loading from "@/components/ui/Loading";
+import { useAuth } from "@/components/providers/SessionProvider";
+import ReportModal from "@/components/moderation/ReportModal";
 
 interface Source {
   id: string;
@@ -80,6 +83,7 @@ const OUTPUT_TYPES = [
 export default function NotebookPage() {
   const params = useParams();
   const router = useRouter();
+  const { user } = useAuth();
   const notebookId = params.notebookId as string;
 
   const [notebook, setNotebook] = useState<Notebook | null>(null);
@@ -89,6 +93,7 @@ export default function NotebookPage() {
   const [expandedSourceId, setExpandedSourceId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"sources" | "outputs">("sources");
   const [generatingOutput, setGeneratingOutput] = useState<string | null>(null);
+  const [showReportModal, setShowReportModal] = useState(false);
 
   useEffect(() => {
     fetchNotebook();
@@ -276,6 +281,17 @@ export default function NotebookPage() {
             <Button variant="secondary" size="sm" icon={<Share2 className="w-4 h-4" />}>
               Share
             </Button>
+            {/* Report button - only show if not owner */}
+            {notebook.user.id !== user?.id && (
+              <button
+                onClick={() => setShowReportModal(true)}
+                className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-red-500/20 rounded-xl text-white/60 hover:text-red-400 transition-colors text-sm"
+                title="Report notebook"
+              >
+                <Flag className="w-4 h-4" />
+                Report
+              </button>
+            )}
             <Link
               href={`/study-rooms?notebookId=${notebook.id}`}
               className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-xl text-white font-medium transition-colors"
@@ -599,6 +615,15 @@ export default function NotebookPage() {
         notebookId={notebook.id}
         source={editingSource}
         onSourceUpdated={handleSourceUpdated}
+      />
+
+      {/* Report Modal */}
+      <ReportModal
+        isOpen={showReportModal}
+        onClose={() => setShowReportModal(false)}
+        contentType="NOTEBOOK"
+        contentId={notebook.id}
+        contentTitle={notebook.title}
       />
     </div>
   );

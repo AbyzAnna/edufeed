@@ -1,7 +1,9 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-// Cookie options for production - ensures cookies persist across refreshes
+// Cookie options for session persistence
+// IMPORTANT: Do NOT set explicit domain - let browser use host-only cookies
+// Setting explicit domain on Vercel causes cookie issues across edge nodes
 function getCookieOptions(request: NextRequest) {
   const isProduction = process.env.NODE_ENV === 'production'
   const isSecure = request.url.startsWith('https://') || isProduction
@@ -10,8 +12,9 @@ function getCookieOptions(request: NextRequest) {
     path: '/',
     sameSite: 'lax' as const,
     secure: isSecure,
-    // Don't set domain - let browser handle it based on the request
     httpOnly: true,
+    // Set maxAge to 1 year (in seconds) - ensures cookies persist across browser sessions
+    maxAge: 60 * 60 * 24 * 365,
   }
 }
 

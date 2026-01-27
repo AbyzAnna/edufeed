@@ -123,6 +123,29 @@ model ContentModerationReport {
   @@index([userId])
 }
 
+model ContentReport {
+  id              String              @id
+  contentType     ReportContentType
+  contentId       String
+  reporterId      String
+  reason          ReportReason
+  description     String?
+  status          ReportStatus        @default(PENDING)
+  reviewerId      String?
+  reviewNotes     String?
+  aiAnalysis      Json?
+  resolvedAt      DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime
+  Reporter        User                @relation("ContentReport_reporterIdToUser", fields: [reporterId], references: [id], onDelete: Cascade)
+  Reviewer        User?               @relation("ContentReport_reviewerIdToUser", fields: [reviewerId], references: [id])
+
+  @@unique([reporterId, contentType, contentId])
+  @@index([contentType, contentId])
+  @@index([status])
+  @@index([createdAt])
+}
+
 model ContentTable {
   id         String   @id
   feedItemId String   @unique
@@ -836,6 +859,8 @@ model User {
   CommentLike                                                      CommentLike[]
   ContentModerationReport_ContentModerationReport_reviewerIdToUser ContentModerationReport[] @relation("ContentModerationReport_reviewerIdToUser")
   ContentModerationReport_ContentModerationReport_userIdToUser     ContentModerationReport[] @relation("ContentModerationReport_userIdToUser")
+  ContentReport_ContentReport_reporterIdToUser                     ContentReport[]           @relation("ContentReport_reporterIdToUser")
+  ContentReport_ContentReport_reviewerIdToUser                     ContentReport[]           @relation("ContentReport_reviewerIdToUser")
   ConversationParticipant                                          ConversationParticipant[]
   Deck                                                             Deck[]
   DirectMessage_DirectMessage_receiverIdToUser                     DirectMessage[]           @relation("DirectMessage_receiverIdToUser")
@@ -976,6 +1001,36 @@ enum ModerationContentType {
   NOTEBOOK_SOURCE
   FLASHCARD
   FEED_ITEM
+}
+
+enum ReportContentType {
+  STUDY_ROOM
+  NOTEBOOK
+  COMMENT
+  USER
+  FEED_ITEM
+  MESSAGE
+}
+
+enum ReportReason {
+  INAPPROPRIATE_CONTENT
+  HARASSMENT
+  SPAM
+  MISINFORMATION
+  HATE_SPEECH
+  VIOLENCE
+  SEXUAL_CONTENT
+  COPYRIGHT
+  OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  UNDER_REVIEW
+  RESOLVED_REMOVED
+  RESOLVED_WARNING
+  RESOLVED_NO_ACTION
+  DISMISSED
 }
 
 enum ModerationDecision {
