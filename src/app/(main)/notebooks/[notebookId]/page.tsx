@@ -83,6 +83,56 @@ export default function NotebookDetailPage() {
     fetchNotebook();
   }, [notebookId]);
 
+  // Poll for status updates when there are processing sources
+  useEffect(() => {
+    const hasProcessingSources = notebook?.sources.some(
+      (s) => s.status === "PROCESSING" || s.status === "PENDING"
+    );
+
+    if (!hasProcessingSources) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/notebooks/${notebookId}/sources`);
+        if (response.ok) {
+          const sources = await response.json();
+          setNotebook((prev) => {
+            if (!prev) return null;
+            // Update sources and auto-select newly completed ones
+            const newlyCompletedIds = sources
+              .filter((s: Source) =>
+                s.status === "COMPLETED" &&
+                prev.sources.find((ps) => ps.id === s.id)?.status !== "COMPLETED"
+              )
+              .map((s: Source) => s.id);
+
+            if (newlyCompletedIds.length > 0) {
+              setSelectedSourceIds((prevSelected) => {
+                const next = new Set(prevSelected);
+                newlyCompletedIds.forEach((id: string) => next.add(id));
+                return next;
+              });
+            }
+
+            return { ...prev, sources };
+          });
+
+          // Stop polling if no more processing sources
+          const stillProcessing = sources.some(
+            (s: Source) => s.status === "PROCESSING" || s.status === "PENDING"
+          );
+          if (!stillProcessing) {
+            clearInterval(pollInterval);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to poll sources:", error);
+      }
+    }, 3000); // Poll every 3 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [notebookId, notebook?.sources]);
+
   const fetchNotebook = async () => {
     try {
       const response = await fetch(`/api/notebooks/${notebookId}`);
