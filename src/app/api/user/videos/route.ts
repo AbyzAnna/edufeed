@@ -1,41 +1,20 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import jwt from "jsonwebtoken";
+import { getAuthSession } from "@/lib/supabase/auth";
 
-interface TokenPayload {
-  userId: string;
-  email?: string;
-  sub?: string;
-}
-
-function getUserIdFromRequest(request: NextRequest): string | null {
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    return null;
-  }
-
-  const token = authHeader.substring(7);
+export async function GET() {
   try {
-    const payload = jwt.verify(
-      token,
-      process.env.NEXTAUTH_SECRET!
-    ) as TokenPayload;
-    return payload.userId || payload.sub || null;
-  } catch {
-    return null;
-  }
-}
+    // Use unified auth session (supports both cookie and Bearer token auth)
+    const session = await getAuthSession();
 
-export async function GET(request: NextRequest) {
-  try {
-    const userId = getUserIdFromRequest(request);
-
-    if (!userId) {
+    if (!session?.user?.id) {
       return NextResponse.json(
         { error: "Unauthorized" },
         { status: 401 }
       );
     }
+
+    const userId = session.user.id;
 
     const videos = await prisma.video.findMany({
       where: { userId },

@@ -1,39 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import jwt from "jsonwebtoken";
-
-interface TokenPayload {
-  userId: string;
-}
-
-function getUserIdFromRequest(request: NextRequest): string | null {
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    return null;
-  }
-
-  const token = authHeader.substring(7);
-  try {
-    const payload = jwt.verify(
-      token,
-      process.env.NEXTAUTH_SECRET!
-    ) as TokenPayload;
-    return payload.userId;
-  } catch {
-    return null;
-  }
-}
+import { getAuthSession } from "@/lib/supabase/auth";
 
 export async function POST(request: NextRequest) {
   try {
-    const userId = getUserIdFromRequest(request);
+    // Use unified auth session (supports both cookie and Bearer token auth)
+    const session = await getAuthSession();
 
-    if (!userId) {
+    if (!session?.user?.id) {
       return NextResponse.json(
         { error: "Unauthorized" },
         { status: 401 }
       );
     }
+
+    const userId = session.user.id;
 
     const { pushToken, platform } = await request.json();
 
@@ -66,16 +47,19 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function DELETE(request: NextRequest) {
+export async function DELETE() {
   try {
-    const userId = getUserIdFromRequest(request);
+    // Use unified auth session (supports both cookie and Bearer token auth)
+    const session = await getAuthSession();
 
-    if (!userId) {
+    if (!session?.user?.id) {
       return NextResponse.json(
         { error: "Unauthorized" },
         { status: 401 }
       );
     }
+
+    const userId = session.user.id;
 
     // Remove push token
     await prisma.user.update({

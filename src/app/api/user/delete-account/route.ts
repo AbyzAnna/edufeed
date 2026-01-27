@@ -1,13 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@supabase/supabase-js";
-import jwt from "jsonwebtoken";
-
-interface TokenPayload {
-  userId: string;
-  email?: string;
-  sub?: string;
-}
+import { getAuthSession } from "@/lib/supabase/auth";
+import { rateLimiters } from "@/lib/rate-limit";
 
 /**
  * GDPR-compliant account deletion endpoint
@@ -18,61 +13,36 @@ interface TokenPayload {
  * - Messages and conversations
  * - Analytics and usage data
  */
-export async function DELETE(request: NextRequest) {
+export async function DELETE() {
   try {
-    // Authenticate user
-    const authHeader = request.headers.get("authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
+    // Use unified auth session (supports both cookie and Bearer token auth)
+    const session = await getAuthSession();
+
+    if (!session?.user?.id) {
       return NextResponse.json(
         { error: "Unauthorized" },
         { status: 401 }
       );
     }
 
-    const token = authHeader.substring(7);
-    let userId: string | null = null;
+    const userId = session.user.id;
 
-    try {
-      // Try JWT verification first
-      const payload = jwt.verify(
-        token,
-        process.env.NEXTAUTH_SECRET!
-      ) as TokenPayload;
-      userId = payload.userId || payload.sub || null;
-    } catch {
-      // If JWT fails, try Supabase token verification
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-      );
-
-      const { data: { user }, error } = await supabase.auth.getUser(token);
-      if (error || !user) {
-        return NextResponse.json(
-          { error: "Invalid token" },
-          { status: 401 }
-        );
-      }
-
-      // Find user by Supabase ID
-      const dbUser = await prisma.user.findFirst({
-        where: {
-          OR: [
-            { id: user.id },
-            { email: user.email },
-          ],
-        },
-      });
-
-      if (dbUser) {
-        userId = dbUser.id;
-      }
-    }
-
-    if (!userId) {
+    // Apply rate limiting (5 requests per hour - very sensitive operation)
+    const rateLimit = rateLimiters.accountDelete(userId);
+    if (!rateLimit.allowed) {
       return NextResponse.json(
-        { error: "User not found" },
-        { status: 404 }
+        {
+          error: "Too many deletion attempts. Please try again later.",
+          retryAfter: Math.ceil((rateLimit.resetTime - Date.now()) / 1000),
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(Math.ceil((rateLimit.resetTime - Date.now()) / 1000)),
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": String(Math.ceil(rateLimit.resetTime / 1000)),
+          },
+        }
       );
     }
 
