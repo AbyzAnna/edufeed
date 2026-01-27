@@ -2,11 +2,14 @@
 
 import Link from "next/link";
 import { useAuth } from "@/components/providers/SessionProvider";
-import { GraduationCap, LogOut, BookOpen, Users, MessageCircle, Layers, Loader2 } from "lucide-react";
+import { GraduationCap, LogOut, BookOpen, Users, MessageCircle, Layers } from "lucide-react";
 import NotificationBell from "@/components/social/NotificationBell";
 
 export default function Navbar() {
-  const { user, isLoading, signOut } = useAuth();
+  const { user, isLoading, isMounted, signOut } = useAuth();
+
+  // Show loading state until mounted AND auth check is complete
+  const showAuthLoading = !isMounted || isLoading;
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-black/90 backdrop-blur-lg border-b border-white/10 hidden md:block">
@@ -32,10 +35,14 @@ export default function Navbar() {
         </nav>
 
         <div className="flex items-center gap-4">
-          {isLoading ? (
-            // Show loading state while checking auth
-            <div className="flex items-center gap-2 text-gray-400">
-              <Loader2 className="w-4 h-4 animate-spin" />
+          {showAuthLoading ? (
+            // Skeleton placeholder matching logged-in state dimensions
+            <div className="flex items-center gap-3 animate-pulse">
+              <div className="w-9 h-9 bg-white/10 rounded-full" />
+              <div className="w-9 h-9 bg-white/10 rounded-full" />
+              <div className="w-8 h-8 bg-white/10 rounded-full" />
+              <div className="h-4 w-24 bg-white/10 rounded" />
+              <div className="w-5 h-5 bg-white/10 rounded" />
             </div>
           ) : user ? (
             <div className="flex items-center gap-3">

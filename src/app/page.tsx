@@ -1,14 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { GraduationCap, BookOpen, Users, Brain, ArrowRight, Sparkles, LogOut, Loader2 } from "lucide-react";
+import { GraduationCap, BookOpen, Users, Brain, ArrowRight, Sparkles, LogOut } from "lucide-react";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/SessionProvider";
 
 export default function Home() {
   const router = useRouter();
-  const { user, isLoading, signOut } = useAuth();
+  const { user, isLoading, isMounted, signOut } = useAuth();
+
+  // Show loading state until mounted AND auth check is complete
+  // This prevents the flash of "Sign In" before user state is determined
+  const showAuthLoading = !isMounted || isLoading;
 
   useEffect(() => {
     // Check if there's an auth error or token in the URL hash
@@ -30,9 +34,14 @@ export default function Home() {
             <span className="text-xl font-bold">EduFeed</span>
           </div>
           <div className="flex items-center gap-4">
-            {isLoading ? (
-              <div className="flex items-center gap-2 text-gray-400">
-                <Loader2 className="w-4 h-4 animate-spin" />
+            {showAuthLoading ? (
+              // Skeleton placeholder matching logged-in state dimensions
+              // This prevents layout shift and "Sign In" flash
+              <div className="flex items-center gap-3 animate-pulse">
+                <div className="h-4 w-24 bg-white/10 rounded hidden sm:block" />
+                <div className="w-8 h-8 bg-white/10 rounded-full" />
+                <div className="h-4 w-32 bg-white/10 rounded hidden sm:block" />
+                <div className="w-5 h-5 bg-white/10 rounded" />
               </div>
             ) : user ? (
               <>
@@ -105,19 +114,29 @@ export default function Home() {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link
-              href={user ? "/notebooks/new" : "/login"}
-              className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 text-white font-medium px-8 py-4 rounded-xl transition-colors flex items-center justify-center gap-2"
-            >
-              {user ? "Create Notebook" : "Get Started"}
-              <ArrowRight className="w-5 h-5" />
-            </Link>
-            <Link
-              href="/notebooks"
-              className="w-full sm:w-auto bg-white/10 hover:bg-white/20 text-white font-medium px-8 py-4 rounded-xl transition-colors"
-            >
-              {user ? "My Notebooks" : "View Notebooks"}
-            </Link>
+            {showAuthLoading ? (
+              // Skeleton for CTA buttons during loading
+              <>
+                <div className="w-full sm:w-48 h-14 bg-purple-600/50 rounded-xl animate-pulse" />
+                <div className="w-full sm:w-40 h-14 bg-white/10 rounded-xl animate-pulse" />
+              </>
+            ) : (
+              <>
+                <Link
+                  href={user ? "/notebooks/new" : "/login"}
+                  className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 text-white font-medium px-8 py-4 rounded-xl transition-colors flex items-center justify-center gap-2"
+                >
+                  {user ? "Create Notebook" : "Get Started"}
+                  <ArrowRight className="w-5 h-5" />
+                </Link>
+                <Link
+                  href="/notebooks"
+                  className="w-full sm:w-auto bg-white/10 hover:bg-white/20 text-white font-medium px-8 py-4 rounded-xl transition-colors"
+                >
+                  {user ? "My Notebooks" : "View Notebooks"}
+                </Link>
+              </>
+            )}
           </div>
         </div>
 

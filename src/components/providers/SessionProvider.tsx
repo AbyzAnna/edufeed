@@ -9,6 +9,7 @@ type AuthContextType = {
   user: User | null;
   session: Session | null;
   isLoading: boolean;
+  isMounted: boolean;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<boolean>;
 };
@@ -17,6 +18,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
   isLoading: true,
+  isMounted: false,
   signOut: async () => {},
   refreshSession: async () => false,
 });
@@ -36,6 +38,7 @@ export default function SessionProvider({
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isMounted, setIsMounted] = useState(false);
   const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
   const supabaseRef = useRef(createClient());
 
@@ -98,6 +101,9 @@ export default function SessionProvider({
   }, [refreshSession]);
 
   useEffect(() => {
+    // Mark as mounted immediately to prevent hydration mismatch
+    setIsMounted(true);
+
     // Set up global fetch interceptor for 401 handling (once)
     if (!isInterceptorSetup()) {
       setupFetchInterceptor();
@@ -105,17 +111,54 @@ export default function SessionProvider({
       console.log('[SessionProvider] Global fetch interceptor set up');
     }
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
-      setSession(initialSession);
-      setUser(initialSession?.user ?? null);
-      setIsLoading(false);
+    // Get initial session with proper validation
+    // First get session from storage, then validate with getUser()
+    const initializeAuth = async () => {
+      try {
+        // getSession() is fast but doesn't validate the token
+        const { data: { session: storedSession } } = await supabase.auth.getSession();
 
-      // Schedule proactive refresh
-      if (initialSession) {
-        scheduleSessionRefresh(initialSession);
+        if (storedSession) {
+          // Validate the session by calling getUser() - this ensures the token is valid
+          const { data: { user: validatedUser }, error } = await supabase.auth.getUser();
+
+          if (error || !validatedUser) {
+            // Session is invalid/expired - try to refresh
+            console.log('[SessionProvider] Stored session invalid, attempting refresh...');
+            const { data: { session: refreshedSession } } = await supabase.auth.refreshSession();
+
+            if (refreshedSession) {
+              console.log('[SessionProvider] Session refreshed successfully');
+              setSession(refreshedSession);
+              setUser(refreshedSession.user);
+              scheduleSessionRefresh(refreshedSession);
+            } else {
+              console.log('[SessionProvider] Refresh failed, user not authenticated');
+              setSession(null);
+              setUser(null);
+            }
+          } else {
+            // Session is valid
+            console.log('[SessionProvider] Session validated successfully');
+            setSession(storedSession);
+            setUser(validatedUser);
+            scheduleSessionRefresh(storedSession);
+          }
+        } else {
+          console.log('[SessionProvider] No stored session found');
+          setSession(null);
+          setUser(null);
+        }
+      } catch (err) {
+        console.error('[SessionProvider] Auth initialization error:', err);
+        setSession(null);
+        setUser(null);
+      } finally {
+        setIsLoading(false);
       }
-    });
+    };
+
+    initializeAuth();
 
     // Listen for auth changes
     const {
@@ -175,7 +218,7 @@ export default function SessionProvider({
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, isLoading, signOut, refreshSession }}>
+    <AuthContext.Provider value={{ user, session, isLoading, isMounted, signOut, refreshSession }}>
       {children}
     </AuthContext.Provider>
   );
